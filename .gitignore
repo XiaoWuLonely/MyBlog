@@ -64,6 +64,3 @@ next-env.d.ts
 
 # local Cloudflare state
 /.wrangler/
-
-# runtime messages
-/src/content/messages/*.json

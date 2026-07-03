@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth-server";
-import { createMessage, readAllMessages, validateMessageInput } from "@/lib/messages";
+import { validateMessageInput } from "@/lib/messages";
 import type { MessageCreateResponse, MessageListResponse } from "@/lib/messages-shared";
-import { isCloudflareRuntime } from "@/lib/runtime-environment";
 import { getD1Binding } from "@/lib/cloudflare-bindings";
 import { listD1Messages, saveD1Message } from "@/lib/cloudflare-content-store";
-import { apiMessageRootDir, revalidateMessageRoutes } from "./shared";
+import { revalidateMessageRoutes } from "./shared";
 
 export async function GET() {
   if (!(await isAdminRequest())) {
@@ -19,7 +18,17 @@ export async function GET() {
   }
 
   const db = getD1Binding();
-  const items = db ? await listD1Messages(db) : await readAllMessages(apiMessageRootDir());
+  if (!db) {
+    return NextResponse.json<MessageListResponse>(
+      {
+        ok: false,
+        message: "D1 database binding is required to read messages.",
+      },
+      { status: 503 },
+    );
+  }
+
+  const items = await listD1Messages(db);
   return NextResponse.json<MessageListResponse>({
     ok: true,
     items,
@@ -29,13 +38,13 @@ export async function GET() {
 export async function POST(request: Request) {
   const db = getD1Binding();
 
-  if (isCloudflareRuntime() && !db) {
+  if (!db) {
     return NextResponse.json<MessageCreateResponse>(
       {
         ok: false,
-        message: "Cloudflare deployment is read-only for file-based messages. Use local message storage or migrate messages to D1/R2.",
+        message: "D1 database binding is required to save messages.",
       },
-      { status: 501 },
+      { status: 503 },
     );
   }
 
@@ -63,17 +72,10 @@ export async function POST(request: Request) {
     return NextResponse.json<MessageCreateResponse>(validation, { status: 422 });
   }
 
-  if (db) {
-    await saveD1Message({
-      db,
-      input: validation.value,
-    });
-  } else {
-    await createMessage({
-      rootDir: apiMessageRootDir(),
-      input: validation.value,
-    });
-  }
+  await saveD1Message({
+    db,
+    input: validation.value,
+  });
   revalidateMessageRoutes();
 
   return NextResponse.json<MessageCreateResponse>({

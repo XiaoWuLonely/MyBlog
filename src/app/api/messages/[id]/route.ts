@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth-server";
-import { deleteMessage } from "@/lib/messages";
 import type { MessageDeleteResponse } from "@/lib/messages-shared";
-import { isCloudflareRuntime } from "@/lib/runtime-environment";
 import { getD1Binding } from "@/lib/cloudflare-bindings";
 import { deleteD1Message } from "@/lib/cloudflare-content-store";
-import { apiMessageRootDir, revalidateMessageRoutes } from "../shared";
+import { revalidateMessageRoutes } from "../shared";
 
 type RouteProps = {
   params: Promise<{
@@ -16,13 +14,13 @@ type RouteProps = {
 export async function DELETE(_request: Request, { params }: RouteProps) {
   const db = getD1Binding();
 
-  if (isCloudflareRuntime() && !db) {
+  if (!db) {
     return NextResponse.json<MessageDeleteResponse>(
       {
         ok: false,
-        message: "Cloudflare deployment is read-only for file-based messages. Migrate messages to D1/R2 to manage them online.",
+        message: "D1 database binding is required to delete messages.",
       },
-      { status: 501 },
+      { status: 503 },
     );
   }
 
@@ -37,12 +35,7 @@ export async function DELETE(_request: Request, { params }: RouteProps) {
   }
 
   const { id } = await params;
-  const deleted = db
-    ? await deleteD1Message(db, id)
-    : await deleteMessage({
-        rootDir: apiMessageRootDir(),
-        id,
-      });
+  const deleted = await deleteD1Message(db, id);
 
   if (!deleted) {
     return NextResponse.json<MessageDeleteResponse>(

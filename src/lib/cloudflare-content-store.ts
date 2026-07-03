@@ -7,11 +7,10 @@ import {
   createPersistedEditorDraft,
   getContentDirectoryForCategory,
   type ContentCollectionItem,
-  type EditorUploadedFile,
   type EditorWritePayload,
 } from "./content.js";
 import type { BaseContentFrontmatter } from "./content-shared";
-import type { D1DatabaseBinding, R2BucketBinding } from "./cloudflare-bindings";
+import type { D1DatabaseBinding } from "./cloudflare-bindings";
 import { normalizeContentSlug } from "./content-slug.js";
 import type { EditorCategory, EditorDraftSource } from "./editor-shared";
 import type { MessageCreateInput, MessageListItem, StoredMessage } from "./messages";
@@ -69,37 +68,6 @@ function getRedirectHref(source: EditorDraftSource) {
     : source.originalCategory === "project"
       ? "/projects"
       : "/resources";
-}
-
-function normalizeR2Key(value: string) {
-  return value.replace(/^\/+/, "");
-}
-
-function sanitizeAssetBaseName(name: string) {
-  const parsed = name.match(/^(.*?)(\.[^.]*?)?$/);
-  const rawBase = parsed?.[1] ?? name;
-  const rawExtension = parsed?.[2] ?? "";
-  const base = rawBase
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/gi, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  const extension = rawExtension.toLowerCase().replace(/[^.\w-]+/g, "");
-  return `${base || "asset"}${extension}`;
-}
-
-function sanitizeAssetSlugPart(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fa5-]+/gi, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function getR2UploadPrefix(category: EditorCategory, slug: string) {
-  return `uploads/${categoryToCollection(category)}/${sanitizeAssetSlugPart(slug)}`;
 }
 
 function getContentOutputPath(category: EditorCategory, slug: string) {
@@ -166,51 +134,23 @@ function storedMessageToListItem(message: StoredMessage): MessageListItem {
   };
 }
 
-async function persistR2Assets({
-  bucket,
+function resolveD1PersistedAssets({
   payload,
   coverUpload,
   assetUploads,
 }: {
-  bucket: R2BucketBinding | null;
   payload: EditorWritePayload;
-  coverUpload?: EditorUploadedFile | null;
-  assetUploads?: EditorUploadedFile[];
-}): Promise<PersistedAssets> {
-  const prefix = getR2UploadPrefix(payload.category, payload.slug);
-  let coverPath: string | null = payload.cover?.persistedPath ?? null;
+  coverUpload?: unknown;
+  assetUploads?: unknown[];
+}): PersistedAssets {
+  const coverPath: string | null = payload.cover?.persistedPath ?? null;
   const assetEntries: PersistedAssetEntries = [];
 
-  if (bucket && coverUpload) {
-    const extension = coverUpload.name.includes(".") ? `.${coverUpload.name.split(".").at(-1)?.toLowerCase()}` : ".bin";
-    const key = `${prefix}/cover${extension}`;
-    await bucket.put(key, coverUpload.buffer, {
-      httpMetadata: {
-        contentType: coverUpload.type || undefined,
-      },
-    });
-    coverPath = `/${key}`;
+  if (coverUpload || (assetUploads?.length ?? 0) > 0) {
+    throw new Error("Cloudflare file uploads are not configured.");
   }
 
-  const uploadsByName = new Map((assetUploads ?? []).map((upload) => [upload.name, upload]));
-
   for (const asset of payload.assets) {
-    const upload = uploadsByName.get(asset.name);
-
-    if (bucket && upload) {
-      const key = `${prefix}/assets/${sanitizeAssetBaseName(upload.name)}`;
-      await bucket.put(key, upload.buffer, {
-        httpMetadata: {
-          contentType: upload.type || undefined,
-        },
-      });
-      assetEntries.push({
-        name: asset.name,
-        path: `/${key}`,
-      });
-      continue;
-    }
-
     assetEntries.push({
       name: asset.name,
       path: asset.persistedPath ?? null,
@@ -224,15 +164,13 @@ async function persistR2Assets({
 }
 
 export function validateCloudflareAssetUploads({
-  bucket,
   coverUpload,
   assetUploads = [],
 }: {
-  bucket: R2BucketBinding | null;
-  coverUpload?: EditorUploadedFile | null;
-  assetUploads?: EditorUploadedFile[];
+  coverUpload?: unknown;
+  assetUploads?: unknown[];
 }) {
-  if (bucket || (!coverUpload && assetUploads.length === 0)) {
+  if (!coverUpload && assetUploads.length === 0) {
     return {
       ok: true,
     } as const;
@@ -240,8 +178,7 @@ export function validateCloudflareAssetUploads({
 
   return {
     ok: false,
-    message:
-      "Cloudflare R2 is not configured, so uploaded covers and attachments cannot be saved. Publish without new files or enable R2.",
+    message: "Cloudflare file uploads are not configured. Publish without new files.",
   } as const;
 }
 
@@ -362,24 +299,15 @@ export async function getD1ContentBySlug<T extends BaseContentFrontmatter = Base
 
 export async function saveD1Content({
   db,
-  bucket = null,
   payload,
-  coverUpload = null,
-  assetUploads = [],
   now = () => new Date().toISOString(),
 }: {
   db: D1DatabaseBinding;
-  bucket?: R2BucketBinding | null;
   payload: EditorWritePayload;
-  coverUpload?: EditorUploadedFile | null;
-  assetUploads?: EditorUploadedFile[];
   now?: () => string;
 }) {
-  const persistedAssets = await persistR2Assets({
-    bucket,
+  const persistedAssets = resolveD1PersistedAssets({
     payload,
-    coverUpload,
-    assetUploads,
   });
   const frontmatter = createBaseContentFrontmatter(payload, now, persistedAssets);
   const source = buildContentFileSource(payload, now, persistedAssets);
@@ -450,29 +378,12 @@ export async function getD1EditorDraftBySource(db: D1DatabaseBinding, source: Ed
   });
 }
 
-async function deleteR2Prefix(bucket: R2BucketBinding, prefix: string) {
-  let cursor: string | undefined;
-
-  do {
-    const page = await bucket.list({ prefix, cursor });
-    const keys = page.objects.map((object) => object.key);
-
-    if (keys.length > 0) {
-      await bucket.delete(keys);
-    }
-
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
-}
-
 export async function deleteD1Content({
   db,
-  bucket = null,
   source,
   now = () => new Date().toISOString(),
 }: {
   db: D1DatabaseBinding;
-  bucket?: R2BucketBinding | null;
   source: EditorDraftSource;
   now?: () => string;
 }) {
@@ -532,10 +443,6 @@ export async function deleteD1Content({
         deletedAt,
       )
       .run();
-  }
-
-  if (bucket) {
-    await deleteR2Prefix(bucket, getR2UploadPrefix(source.originalCategory, slug));
   }
 
   return {
@@ -657,8 +564,4 @@ export async function deleteD1Message(db: D1DatabaseBinding, id: string) {
     .run();
 
   return true;
-}
-
-export async function getR2Asset(bucket: R2BucketBinding, publicPath: string) {
-  return bucket.get(normalizeR2Key(publicPath));
 }

@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth-server";
-import { markMessageAsRead } from "@/lib/messages";
 import type { MessageMutationResponse } from "@/lib/messages-shared";
-import { isCloudflareRuntime } from "@/lib/runtime-environment";
 import { getD1Binding } from "@/lib/cloudflare-bindings";
 import { markD1MessageAsRead } from "@/lib/cloudflare-content-store";
-import { apiMessageRootDir, revalidateMessageRoutes } from "../../shared";
+import { revalidateMessageRoutes } from "../../shared";
 
 type RouteProps = {
   params: Promise<{
@@ -16,13 +14,13 @@ type RouteProps = {
 export async function POST(_request: Request, { params }: RouteProps) {
   const db = getD1Binding();
 
-  if (isCloudflareRuntime() && !db) {
+  if (!db) {
     return NextResponse.json<MessageMutationResponse>(
       {
         ok: false,
-        message: "Cloudflare deployment is read-only for file-based messages. Migrate messages to D1/R2 to manage them online.",
+        message: "D1 database binding is required to update messages.",
       },
-      { status: 501 },
+      { status: 503 },
     );
   }
 
@@ -37,15 +35,10 @@ export async function POST(_request: Request, { params }: RouteProps) {
   }
 
   const { id } = await params;
-  const item = db
-    ? await markD1MessageAsRead({
-        db,
-        id,
-      })
-    : await markMessageAsRead({
-        rootDir: apiMessageRootDir(),
-        id,
-      });
+  const item = await markD1MessageAsRead({
+    db,
+    id,
+  });
 
   if (!item) {
     return NextResponse.json<MessageMutationResponse>(

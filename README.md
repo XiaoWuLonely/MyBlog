@@ -13,7 +13,7 @@ A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
 - Custom animated route transitions with Framer Motion
 - Light/dark theme with persistent toggle
 - URL-synced search and category filters on the archive page
-- Cloudflare D1 for online content persistence (no rebuild needed for new posts)
+- Cloudflare D1 for content and visitor message persistence
 - Static content registry fallback for builds without filesystem access
 
 ## Pages
@@ -38,7 +38,7 @@ A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
 - **Animation:** Framer Motion
 - **Content:** MDX via `@next/mdx` + `next-mdx-remote`
 - **Deployment:** Cloudflare Workers via `@opennextjs/cloudflare`
-- **Database:** Cloudflare D1 (optional, for online writes)
+- **Database:** Cloudflare D1
 
 ## Local Development
 
@@ -59,23 +59,30 @@ ADMIN_ACCESS_CODE=<your access code>
 ADMIN_SESSION_SECRET=<a long random string>
 ```
 
-Start the dev server:
+For the full local runtime, including editor publishing and visitor messages, use the Cloudflare preview command. The D1 binding in `wrangler.jsonc` is intentionally configured with `"remote": true`, so local preview writes to the real remote Cloudflare D1 database.
+
+```powershell
+npm run cf:preview
+```
+
+Use the plain Next.js dev server only for quick UI work that does not require Cloudflare bindings:
 
 ```powershell
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open the URL printed by the command you run.
 
 ## Commands
 
 ```powershell
-npm run dev          # Dev server
+npm run dev          # Next.js dev server; Cloudflare D1 writes are unavailable
 npm test             # Run tests (Node test runner)
 npm run typecheck    # TypeScript check (run sequentially, not in parallel)
 npm run build        # Production build
 npm run lint         # ESLint
 npm run cf:build     # Cloudflare build
+npm run cf:preview   # Cloudflare local preview using the remote D1 binding
 npm run cf:deploy    # Cloudflare build + deploy
 ```
 
@@ -87,7 +94,7 @@ node --experimental-specifier-resolution=node --test --experimental-strip-types 
 
 ## Cloudflare Workers Deployment
 
-The site deploys to Cloudflare Workers. Public content is bundled into a static registry at build time so the Worker can serve pages without filesystem access. When a D1 database binding is configured, the editor can publish content directly to D1 without a rebuild cycle.
+The site deploys to Cloudflare Workers. Public content is bundled into a static registry at build time so the Worker can serve pages without filesystem access. The editor publishes content directly to the configured Cloudflare D1 database.
 
 ### Setup
 
@@ -101,6 +108,18 @@ npx wrangler d1 execute myblog --remote --file migrations/0001_d1_r2_content.sql
 # Export existing content to D1
 node scripts/export-content-for-d1.mjs | Out-File -FilePath .\d1-content-import.sql -Encoding utf8
 npx wrangler d1 execute myblog --remote --file .\d1-content-import.sql
+```
+
+If an existing remote D1 database already has `content_items` but is missing the visitor message table, apply the incremental message migration:
+
+```powershell
+npx wrangler d1 execute myblog --remote --file migrations/0002_messages.sql
+```
+
+Check the remote tables:
+
+```powershell
+npx wrangler d1 execute myblog --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
 ```
 
 Configure Worker secrets:
@@ -121,8 +140,8 @@ The `wrangler.jsonc` contains the D1 database binding (`MYBLOG_DB`). Replace the
 ### Notes
 
 - Production builds use Webpack (`--webpack`) because the OpenNext adapter does not reliably load Next 16 Turbopack server chunks in the Worker runtime.
-- R2 is not currently configured. New file uploads (covers, attachments) are rejected on Cloudflare; publish text-only content for now.
-- Visitor messages are stored in D1 when the binding is available; locally they are JSON files under `src/content/messages`.
+- New file uploads (covers, attachments) are rejected on Cloudflare; publish text-only content for now.
+- Visitor messages are stored in the remote D1 database. If message submission fails with `no such table: messages`, run `migrations/0002_messages.sql` against the remote database.
 
 ## Environment Variables
 
@@ -131,10 +150,3 @@ The `wrangler.jsonc` contains the D1 database binding (`MYBLOG_DB`). Replace the
 | `ADMIN_ACCESS_CODE` | Yes | Admin login code |
 | `ADMIN_SESSION_SECRET` | Yes | Session signing secret |
 | `MYBLOG_DB` | CF only | D1 database binding (set in `wrangler.jsonc`) |
-| `MYBLOG_GITHUB_REPOSITORY` | No | Legacy GitHub publishing target |
-| `MYBLOG_GITHUB_TOKEN` | No | Legacy GitHub publishing token |
-
-## Project Docs
-
-- [Current state](docs/current-state.md) — product state and recent decisions
-- [Architecture](docs/architecture.md) — subsystem map and data flow

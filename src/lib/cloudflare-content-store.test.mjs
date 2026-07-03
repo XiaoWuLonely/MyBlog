@@ -691,16 +691,14 @@ test("D1 delete creates a tombstone when bundled fallback content was never impo
   assert.equal(detail, null);
 });
 
-test("Cloudflare publishing rejects new uploaded assets when no R2 bucket is bound", () => {
+test("Cloudflare publishing rejects new uploaded assets", () => {
   const withoutUploads = validateCloudflareAssetUploads({
-    bucket: null,
     coverUpload: null,
     assetUploads: [],
   });
   assert.equal(withoutUploads.ok, true);
 
   const withUploads = validateCloudflareAssetUploads({
-    bucket: null,
     coverUpload: {
       name: "cover.png",
       type: "image/png",
@@ -712,6 +710,6 @@ test("Cloudflare publishing rejects new uploaded assets when no R2 bucket is bou
 
   assert.deepEqual(withUploads, {
     ok: false,
-    message: "Cloudflare R2 is not configured, so uploaded covers and attachments cannot be saved. Publish without new files or enable R2.",
+    message: "Cloudflare file uploads are not configured. Publish without new files.",
   });
 });

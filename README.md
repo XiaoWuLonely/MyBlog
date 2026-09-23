@@ -2,7 +2,7 @@
 
 A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
 
-**Live site:** [smartxb.fun](https://smartxb.fun)
+**Live site:** [smartxb.syz](https://smartxb.syz)
 
 ## Features
 
@@ -18,18 +18,18 @@ A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
 
 ## Pages
 
-| Route | Description |
-|---|---|
-| `/` | Home board |
-| `/archive` | Post archive with search and category filters |
-| `/posts/[slug]` | Individual post |
-| `/projects` | Project listing |
-| `/projects/[slug]` | Project detail |
-| `/resources` | Resource listing |
-| `/resources/[slug]` | Resource detail |
-| `/about` | Profile page with message submission form |
-| `/admin` | Admin login |
-| `/editor` | Content editor (archive / project / resource) |
+| Route               | Description                                   |
+| ------------------- | --------------------------------------------- |
+| `/`                 | Home board                                    |
+| `/archive`          | Post archive with search and category filters |
+| `/posts/[slug]`     | Individual post                               |
+| `/projects`         | Project listing                               |
+| `/projects/[slug]`  | Project detail                                |
+| `/resources`        | Resource listing                              |
+| `/resources/[slug]` | Resource detail                               |
+| `/about`            | Profile page with message submission form     |
+| `/admin`            | Admin login                                   |
+| `/editor`           | Content editor (archive / project / resource) |
 
 ## Stack
 
@@ -145,8 +145,8 @@ The `wrangler.jsonc` contains the D1 database binding (`MYBLOG_DB`). Replace the
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|---|---|---|
-| `ADMIN_ACCESS_CODE` | Yes | Admin login code |
-| `ADMIN_SESSION_SECRET` | Yes | Session signing secret |
-| `MYBLOG_DB` | CF only | D1 database binding (set in `wrangler.jsonc`) |
+| Variable               | Required | Description                                   |
+| ---------------------- | -------- | --------------------------------------------- |
+| `ADMIN_ACCESS_CODE`    | Yes      | Admin login code                              |
+| `ADMIN_SESSION_SECRET` | Yes      | Session signing secret                        |
+| `MYBLOG_DB`            | CF only  | D1 database binding (set in `wrangler.jsonc`) |

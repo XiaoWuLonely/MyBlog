@@ -41,7 +41,10 @@ function projectIcon(icon: "grid" | "spark" | "pen" | "layers") {
 }
 
 export default async function ProjectsPage() {
-  const [projects, canManage] = await Promise.all([getAllProjects(), isAdminRequest()]);
+  const [projects, canManage] = await Promise.all([
+    getAllProjects(),
+    isAdminRequest(),
+  ]);
 
   return (
     <div className="space-y-6 pb-8 pt-2">
@@ -105,7 +108,9 @@ export default async function ProjectsPage() {
                           <Pill key={item}>{item}</Pill>
                         ))}
                       </div>
-                      <p className="mt-4 text-sm leading-7 text-muted-foreground">{project.summary}</p>
+                      <p className="mt-4 text-sm leading-7 text-muted-foreground">
+                        {project.summary}
+                      </p>
                     </div>
                   </div>
                 </RouteLink>
@@ -126,7 +131,11 @@ export default async function ProjectsPage() {
                       >
                         编辑
                       </RouteLink>
-                      <AdminDeleteButton category="project" slug={project.slug} variant="inline">
+                      <AdminDeleteButton
+                        category="project"
+                        slug={project.slug}
+                        variant="inline"
+                      >
                         删除
                       </AdminDeleteButton>
                     </>

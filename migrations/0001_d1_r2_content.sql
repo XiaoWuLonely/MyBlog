@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS content_items (
   title TEXT NOT NULL,
   summary TEXT NOT NULL,
   category TEXT NOT NULL,
-  tags_json TEXT NOT NULL DEFAULT '[]',
+  tags_json TEXT NOT  NULL DEFAULT '[]',
   frontmatter_json TEXT NOT NULL,
   body TEXT NOT NULL,
   source TEXT NOT NULL,

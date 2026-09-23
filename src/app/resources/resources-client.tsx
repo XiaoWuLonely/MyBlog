@@ -44,8 +44,10 @@ export function ResourcesClient({
     const normalized = deferredQuery.trim().toLowerCase();
 
     return resources.filter((resource) => {
-      const matchCategory = category === ALL_RESOURCES_CATEGORY || resource.category === category;
-      const haystack = `${resource.title} ${resource.description} ${resource.tags.join(" ")}`.toLowerCase();
+      const matchCategory =
+        category === ALL_RESOURCES_CATEGORY || resource.category === category;
+      const haystack =
+        `${resource.title} ${resource.description} ${resource.tags.join(" ")}`.toLowerCase();
       const matchQuery = !normalized || haystack.includes(normalized);
 
       return matchCategory && matchQuery;
@@ -159,7 +161,9 @@ export function ResourcesClient({
                 <span className="mt-1 block truncate text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   {resource.url.replace(/^https?:\/\//, "")}
                 </span>
-                <p className="mt-4 flex-1 text-sm leading-7 text-muted-foreground">{resource.description}</p>
+                <p className="mt-4 flex-1 text-sm leading-7 text-muted-foreground">
+                  {resource.description}
+                </p>
               </RouteLink>
               <div className="mt-5 flex flex-wrap gap-2">
                 <RouteLink
@@ -177,7 +181,11 @@ export function ResourcesClient({
                     >
                       编辑
                     </RouteLink>
-                    <AdminDeleteButton category="resource" slug={resource.slug} variant="inline">
+                    <AdminDeleteButton
+                      category="resource"
+                      slug={resource.slug}
+                      variant="inline"
+                    >
                       删除
                     </AdminDeleteButton>
                   </>

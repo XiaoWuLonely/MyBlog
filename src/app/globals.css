@@ -3832,7 +3832,6 @@ html[data-theme="dark"] .prose-sunset pre {
 
   .editor-ghost-button,
   .editor-primary-button {
-    flex: 1 1 calc(50% - 0.75rem);
     justify-content: center;
   }
 

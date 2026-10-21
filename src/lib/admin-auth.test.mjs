@@ -111,11 +111,12 @@ test("admin permission routes and pages are wired into the app surface", () => {
   assert.doesNotMatch(projectDetailPage, /process\.env\.NODE_ENV === "development"/);
   assert.doesNotMatch(resourceDetailPage, /process\.env\.NODE_ENV === "development"/);
   assert.match(archiveClient, /canManage/);
-  assert.match(projectsPage, /canManage/);
   assert.match(resourcesClient, /canManage/);
-  assert.match(postDetailPage, /canManage/);
-  assert.match(projectDetailPage, /canManage/);
-  assert.match(resourceDetailPage, /canManage/);
+  // 列表/详情页的管理员入口已移入 Suspense 动态洞，洞内直接用 isAdminRequest 判定权限。
+  assert.match(projectsPage, /isAdminRequest/);
+  assert.match(postDetailPage, /isAdminRequest/);
+  assert.match(projectDetailPage, /isAdminRequest/);
+  assert.match(resourceDetailPage, /isAdminRequest/);
 });
 
 test("admin client performs full document navigation after session changes", () => {

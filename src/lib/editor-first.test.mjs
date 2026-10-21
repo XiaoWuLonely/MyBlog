@@ -106,20 +106,31 @@ test("delete success flows refresh after client-side redirects", () => {
 });
 
 test("content management entry points rely on admin permission state instead of development mode", () => {
-  const filesToCheck = [
+  // 客户端组件通过 canManage prop 接收权限状态；
+  // 服务端页面则在 Suspense 动态洞内直接调用 isAdminRequest。
+  const clientFiles = [
     join(process.cwd(), "src/app/archive/archive-client.tsx"),
-    join(process.cwd(), "src/app/projects/page.tsx"),
     join(process.cwd(), "src/app/resources/resources-client.tsx"),
+  ];
+  const pageFiles = [
+    join(process.cwd(), "src/app/projects/page.tsx"),
     join(process.cwd(), "src/app/posts/[slug]/page.tsx"),
     join(process.cwd(), "src/app/projects/[slug]/page.tsx"),
     join(process.cwd(), "src/app/resources/[slug]/page.tsx"),
   ];
 
-  for (const filePath of filesToCheck) {
+  for (const filePath of [...clientFiles, ...pageFiles]) {
     const source = readFileSync(filePath, "utf8");
     assert.match(source, /buildEditorLoadHref/);
-    assert.match(source, /canManage/);
     assert.doesNotMatch(source, /process\.env\.NODE_ENV === "development"/);
+  }
+
+  for (const filePath of clientFiles) {
+    assert.match(readFileSync(filePath, "utf8"), /canManage/);
+  }
+
+  for (const filePath of pageFiles) {
+    assert.match(readFileSync(filePath, "utf8"), /isAdminRequest/);
   }
 });
 

@@ -41,11 +41,8 @@ test("resolveWaitingContentMotion keeps the main content in place while waiting 
   assert.deepEqual(resolveWaitingContentMotion({ isWaitingForTarget: true }), {
     opacity: 0.14,
     x: 0,
-    y: 0,
-    scaleX: 0.982,
-    scaleY: 0.986,
-    rotate: 0,
-    filter: "blur(8px) saturate(0.9)",
+    scale: 0.985,
+    filter: "blur(4px)",
   });
 });
 

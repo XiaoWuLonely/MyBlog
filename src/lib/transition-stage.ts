@@ -39,21 +39,15 @@ export function resolveWaitingContentMotion({ isWaitingForTarget }: WaitingConte
     return {
       opacity: 1,
       x: 0,
-      y: 0,
-      scaleX: 1,
-      scaleY: 1,
-      rotate: 0,
-      filter: "blur(0px) saturate(1)",
+      scale: 1,
+      filter: "blur(0px)",
     };
   }
 
   return {
     opacity: 0.14,
     x: 0,
-    y: 0,
-    scaleX: 0.982,
-    scaleY: 0.986,
-    rotate: 0,
-    filter: "blur(8px) saturate(0.9)",
+    scale: 0.985,
+    filter: "blur(4px)",
   };
 }

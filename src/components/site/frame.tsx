@@ -20,7 +20,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { navItems, siteConfig, type NavItem } from "@/content/site";
 import { normalizeRoutePathname } from "@/lib/route-path";
@@ -36,8 +36,8 @@ import {
   usePageTransition,
 } from "./transition-context";
 
-// 页面进入动画"稳定"后，再多等 680ms 才结束过渡，让动画播完
-const ENTER_SETTLE_MS = 680;
+// 页面进入动画"稳定"后，再多等 260ms 才结束过渡，让动画播完
+const ENTER_SETTLE_MS = 260;
 
 // ============================================================
 // 第2层：辅助函数（纯逻辑，不涉及 UI）
@@ -376,7 +376,6 @@ function FloatingAction({ motionEnabled }: { motionEnabled: boolean }) {
 function AppFrameInner({ children }: { children: React.ReactNode }) {
   // ---- 路由相关 ----
   const pathname = usePathname();
-  const router = useRouter();
   const normalizedPathname = normalizeRoutePathname(pathname);
 
   // ---- 动画设置 ----
@@ -399,7 +398,6 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   // ---- ref（存引用，不触发重渲染） ----
   const stageRef = useRef<HTMLDivElement | null>(null); // 指向页面内容容器
   const settleTimerRef = useRef<number | null>(null); // 过渡结束的定时器
-  const stageProbeRef = useRef<number | null>(null); // 轮询检测新页面是否就绪
 
   // ================================================================
   // 以下是 useEffect 副作用逻辑
@@ -410,31 +408,11 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
-  // 预取常用路由，让导航更快
-  useEffect(() => {
-    const routesToWarm = [
-      "/",
-      "/about",
-      "/projects",
-      "/resources",
-      "/archive",
-      "/editor",
-      "/posts/building-a-calm-interface",
-    ];
-
-    routesToWarm.forEach((href) => {
-      void router.prefetch(href);
-    });
-  }, [router]);
-
-  // 组件卸载时清理定时器和动画帧
+  // 组件卸载时清理定时器
   useEffect(() => {
     return () => {
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current);
-      }
-      if (stageProbeRef.current !== null) {
-        window.cancelAnimationFrame(stageProbeRef.current);
       }
     };
   }, []);
@@ -538,12 +516,15 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   }, [activeTransition, cancelTransition, routeMotionEnabled]);
 
   // ================================================================
-  // 核心过渡逻辑：轮询检测新页面是否渲染完成
+  // 核心过渡逻辑：监听新页面是否渲染完成
   // 当检测到 ".page-loading-shell" 消失 → 说明新页面就绪
   // 然后触发 "entering" 阶段，播放进入动画
+  // （用 MutationObserver 代替 rAF 轮询，避免空转消耗）
   // ================================================================
   useEffect(() => {
-    if (!activeTransition || !stageRef.current) {
+    const stage = stageRef.current;
+
+    if (!activeTransition || !stage) {
       setStageReady(false);
       return;
     }
@@ -553,22 +534,8 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const verifyStageReady = () => {
-      if (!stageRef.current) {
-        return;
-      }
-
-      const hasLoadingShell = !!stageRef.current.querySelector(
-        ".page-loading-shell",
-      );
-
-      // 如果页面还在加载（有 loading-shell），继续轮询
-      if (hasLoadingShell) {
-        stageProbeRef.current = window.requestAnimationFrame(verifyStageReady);
-        return;
-      }
-
-      // 页面加载完成 → 标记就绪，进入 entering 阶段
+    // 页面加载完成 → 标记就绪，进入 entering 阶段
+    const markStageReady = () => {
       setStageReady(true);
       setPhase("entering");
 
@@ -577,21 +544,32 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
         window.clearTimeout(settleTimerRef.current);
       }
 
-      // 等进入动画播完（680ms），再结束过渡
+      // 等进入动画播完，再结束过渡
       settleTimerRef.current = window.setTimeout(() => {
         finishTransition(activeTransition.id);
         settleTimerRef.current = null;
       }, ENTER_SETTLE_MS);
     };
 
-    verifyStageReady();
+    // 先同步检查一次：如果 loading-shell 已经不存在，直接就绪
+    if (!stage.querySelector(".page-loading-shell")) {
+      markStageReady();
+      return;
+    }
 
-    // 清理：组件卸载或 activeTransition 变化时取消轮询
-    return () => {
-      if (stageProbeRef.current !== null) {
-        window.cancelAnimationFrame(stageProbeRef.current);
-        stageProbeRef.current = null;
+    // 否则监听 DOM 变化，loading-shell 消失时就绪
+    const observer = new MutationObserver(() => {
+      if (!stage.querySelector(".page-loading-shell")) {
+        observer.disconnect();
+        markStageReady();
       }
+    });
+
+    observer.observe(stage, { childList: true, subtree: true });
+
+    // 清理：组件卸载或 activeTransition 变化时断开监听
+    return () => {
+      observer.disconnect();
     };
   }, [activeTransition, finishTransition, normalizedPathname, setPhase]);
 
@@ -648,19 +626,14 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                     "shell-main shell-main-layer",
                     overlayVisible && "shell-main-layer-current",
                   )}
-                  // 初始状态：透明 + 偏移 + 缩小 + 模糊 + 低饱和度
+                  // 初始状态：透明 + 偏移 + 缩小 + 轻度模糊
                   initial={
                     routeMotionEnabled
                       ? {
                           opacity: activeTransition ? 0.24 : 0.4,
-                          x: activeTransition ? 42 : 22,
-                          y: activeTransition ? 28 : 18,
-                          scaleX: activeTransition ? 0.9 : 0.95,
-                          scaleY: activeTransition ? 0.84 : 0.94,
-                          rotate: activeTransition ? 3.4 : 1.2,
-                          filter: activeTransition
-                            ? "blur(18px) saturate(0.82)"
-                            : "blur(10px) saturate(0.9)",
+                          x: activeTransition ? 36 : 18,
+                          scale: activeTransition ? 0.94 : 0.97,
+                          filter: "blur(6px)",
                         }
                       : false
                   }
@@ -672,36 +645,18 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                       ? {
                           x: {
                             type: "spring",
-                            stiffness: 248,
-                            damping: 16,
-                            mass: 0.78,
-                          },
-                          y: {
-                            type: "spring",
-                            stiffness: 228,
-                            damping: 16,
+                            stiffness: 260,
+                            damping: 20,
                             mass: 0.8,
                           },
-                          scaleX: {
+                          scale: {
                             type: "spring",
                             stiffness: 280,
-                            damping: 13,
-                            mass: 0.7,
-                          },
-                          scaleY: {
-                            type: "spring",
-                            stiffness: 262,
-                            damping: 12,
-                            mass: 0.68,
-                          },
-                          rotate: {
-                            type: "spring",
-                            stiffness: 220,
-                            damping: 16,
+                            damping: 20,
                             mass: 0.8,
                           },
-                          opacity: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
-                          filter: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                          opacity: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+                          filter: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
                         }
                       : undefined
                   }
@@ -730,32 +685,23 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                     initial={{
                       opacity: 1,
                       x: 0,
-                      y: 0,
-                      scaleX: 1,
-                      scaleY: 1,
-                      rotate: 0,
-                      filter: "blur(0px) saturate(1)",
+                      scale: 1,
+                      filter: "blur(0px)",
                     }}
-                    // 目标：进入时向左上角缩小淡出，还在等待时轻微偏移
+                    // 目标：进入时向左缩小淡出，还在等待时轻微偏移
                     animate={
                       phase === "entering"
                         ? {
                             opacity: 0,
-                            x: -96,
-                            y: -40,
-                            scaleX: 0.84,
-                            scaleY: 0.74,
-                            rotate: -5.8,
-                            filter: "blur(20px) saturate(0.84)",
+                            x: -64,
+                            scale: 0.9,
+                            filter: "blur(6px)",
                           }
                         : {
                             opacity: 1,
-                            x: -18,
-                            y: -14,
-                            scaleX: 0.978,
-                            scaleY: 0.948,
-                            rotate: -1.1,
-                            filter: "blur(3px) saturate(0.98)",
+                            x: -12,
+                            scale: 0.985,
+                            filter: "blur(2px)",
                           }
                     }
                     transition={
@@ -763,49 +709,28 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                         ? {
                             x: {
                               type: "spring",
-                              stiffness: 176,
-                              damping: 14,
-                              mass: 0.92,
+                              stiffness: 200,
+                              damping: 18,
+                              mass: 0.9,
                             },
-                            y: {
+                            scale: {
                               type: "spring",
-                              stiffness: 166,
-                              damping: 13,
-                              mass: 0.94,
-                            },
-                            scaleX: {
-                              type: "spring",
-                              stiffness: 244,
-                              damping: 12,
-                              mass: 0.58,
-                            },
-                            scaleY: {
-                              type: "spring",
-                              stiffness: 226,
-                              damping: 11,
-                              mass: 0.56,
-                            },
-                            rotate: {
-                              type: "spring",
-                              stiffness: 196,
-                              damping: 13,
-                              mass: 0.8,
+                              stiffness: 240,
+                              damping: 18,
+                              mass: 0.9,
                             },
                             opacity: {
-                              duration: 0.26,
+                              duration: 0.24,
                               ease: [0.18, 0.88, 0.18, 1],
                             },
                             filter: {
-                              duration: 0.3,
+                              duration: 0.26,
                               ease: [0.18, 0.88, 0.18, 1],
                             },
                           }
                         : {
                             x: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
-                            y: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
-                            scaleX: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
-                            scaleY: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
-                            rotate: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
+                            scale: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
                             opacity: {
                               duration: 0.2,
                               ease: [0.22, 1, 0.36, 1],

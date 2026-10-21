@@ -1,7 +1,8 @@
 import path from "node:path";
+import { cache } from "react";
 import matter from "gray-matter";
 import { findContentFileBySlug, normalizeContentSlug } from "./content-slug.js";
-import { readCollectionItems, readContentBySlugWithD1Fallback, readContentCollectionWithD1Fallback } from "./content.js";
+import { readCollectionItems, readContentBySlugWithD1Fallback, readContentCollectionMetaWithD1Fallback } from "./content.js";
 import {
   ALL_RESOURCES_CATEGORY,
   normalizeResourceFiltersWithCategories,
@@ -37,16 +38,21 @@ function normalizeResourceItem(resource: Partial<ResourceItem> & Pick<ResourceIt
   };
 }
 
-export async function getAllResources() {
-  const items = await readContentCollectionWithD1Fallback<ResourceItem>({
+// React cache：同一请求内去重；元数据瘦身读取避免为列表页拉取全文。
+export const getAllResources = cache(async () => {
+  const items = await readContentCollectionMetaWithD1Fallback<ResourceItem>({
     category: "resource",
-    fallback: () => readCollectionItems<ResourceItem>(RESOURCES_DIR),
+    fallback: async () =>
+      (await readCollectionItems<ResourceItem>(RESOURCES_DIR)).map(({ meta, filePath }) => ({
+        meta,
+        filePath,
+      })),
   });
 
   return items
     .map((item) => normalizeResourceItem(item.meta))
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
-}
+});
 
 export async function getResourceSlugs() {
   const resources = await getAllResources();
@@ -59,7 +65,7 @@ export async function getResourceBySlug(slug: string) {
   return resources.find((resource) => resource.slug === normalizedSlug) ?? null;
 }
 
-export async function getResourceDetailBySlug(slug: string) {
+export const getResourceDetailBySlug = cache(async (slug: string) => {
   const item = await readContentBySlugWithD1Fallback<ResourceItem>({
     category: "resource",
     slug,
@@ -89,7 +95,7 @@ export async function getResourceDetailBySlug(slug: string) {
     meta,
     rawContent: item.content,
   };
-}
+});
 
 export async function getResourceCategories() {
   const resources = await getAllResources();

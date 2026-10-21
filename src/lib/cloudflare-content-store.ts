@@ -7,11 +7,13 @@ import {
   createPersistedEditorDraft,
   getContentDirectoryForCategory,
   type ContentCollectionItem,
+  type ContentCollectionMeta,
   type EditorWritePayload,
 } from "./content.js";
 import type { BaseContentFrontmatter } from "./content-shared";
 import type { D1DatabaseBinding } from "./cloudflare-bindings";
 import { normalizeContentSlug } from "./content-slug.js";
+import { invalidateD1Cache } from "./d1-cache.js";
 import type { EditorCategory, EditorDraftSource } from "./editor-shared";
 import type { MessageCreateInput, MessageListItem, StoredMessage } from "./messages";
 
@@ -29,6 +31,9 @@ type ContentRow = {
   updated_at: string;
   deleted_at: string | null;
 };
+
+// 列表场景专用：不读取 body / source 大字段，减少 D1 传输与 JSON.parse 开销。
+type ContentMetaRow = Omit<ContentRow, "body" | "source">;
 
 type MessageRow = {
   id: string;
@@ -107,6 +112,15 @@ function contentRowToItem<T extends BaseContentFrontmatter = BaseContentFrontmat
   return {
     meta: JSON.parse(row.frontmatter_json) as T,
     content: row.body,
+    filePath: getContentOutputPath(collectionToCategory(row.collection) ?? "archive", row.slug),
+  };
+}
+
+function contentMetaRowToItem<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
+  row: ContentMetaRow,
+): ContentCollectionMeta<T> {
+  return {
+    meta: JSON.parse(row.frontmatter_json) as T,
     filePath: getContentOutputPath(collectionToCategory(row.collection) ?? "archive", row.slug),
   };
 }
@@ -277,6 +291,40 @@ export async function listAllD1Content<T extends BaseContentFrontmatter = BaseCo
   return { items, deletedSlugs };
 }
 
+// listAllD1Content 的元数据瘦身版：SELECT 列表去掉 body / source 大字段，
+// 供公开列表页（归档 / 项目 / 资源 / 相邻文章）使用。
+export async function listAllD1ContentMeta<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
+  db: D1DatabaseBinding,
+  category: EditorCategory,
+) {
+  const collection = categoryToCollection(category);
+  const rows = await db
+    .prepare(
+      `SELECT collection, slug, title, summary, category, tags_json, frontmatter_json, published_at, updated_at, deleted_at
+       FROM content_items
+       WHERE collection = ?1
+       ORDER BY published_at DESC, updated_at DESC`,
+    )
+    .bind(collection)
+    .all<ContentMetaRow>();
+
+  const allRows = rows.results ?? [];
+  const items: ContentCollectionMeta<T>[] = [];
+  const deletedSlugs = new Set<string>();
+
+  for (const row of allRows) {
+    const normalizedSlug = normalizeContentSlug(row.slug);
+
+    if (row.deleted_at) {
+      deletedSlugs.add(normalizedSlug);
+    } else {
+      items.push(contentMetaRowToItem<T>(row));
+    }
+  }
+
+  return { items, deletedSlugs };
+}
+
 export async function getD1ContentBySlug<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
   db: D1DatabaseBinding,
   category: EditorCategory,
@@ -347,6 +395,9 @@ export async function saveD1Content({
       updatedAt,
     )
     .run();
+
+  // 写入成功：同步失效本 isolate 的 L1 缓存，保证同一 isolate 内立刻读到新数据。
+  invalidateD1Cache(payload.category);
 
   const result = buildEditorWriteResult({
     payload,
@@ -444,6 +495,9 @@ export async function deleteD1Content({
       )
       .run();
   }
+
+  // 删除（含 tombstone 写入）完成：同步失效本 isolate 的 L1 缓存。
+  invalidateD1Cache(source.originalCategory);
 
   return {
     ok: true,

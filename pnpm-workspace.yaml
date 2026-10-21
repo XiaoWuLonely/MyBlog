@@ -3,3 +3,5 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   workerd: true
+patchedDependencies:
+  '@opennextjs/aws@4.1.4': patches/@opennextjs__aws@4.1.4.patch

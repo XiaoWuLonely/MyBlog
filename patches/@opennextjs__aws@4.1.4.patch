@@ -1,0 +1,80 @@
+diff --git a/dist/build/copyTracedFiles.js b/dist/build/copyTracedFiles.js
+index c847154da1464b71bbd871ba668336ae0078cfed..f5319b0e390b6e05d084ec557f7b52cb99c6e9b1 100644
+--- a/dist/build/copyTracedFiles.js
++++ b/dist/build/copyTracedFiles.js
+@@ -237,7 +237,74 @@ File ${serverPath} does not exist
+                 symlinkSync(symlink, to);
+             }
+             catch (e) {
+-                if (e.code !== "EEXIST") {
++                if (e.code === "EPERM" || e.code === "EACCES") {
++                    // Windows hosts without Developer Mode cannot create symlinks.
++                    // On pnpm+Windows the standalone links are absolute junctions
++                    // pointing back at the project source store, which bypasses the
++                    // code patches applied to the traced copies inside the output
++                    // directory. Retarget the junction to the patched copy inside the
++                    // output tree's own .pnpm store (mirroring Linux's relative
++                    // symlink semantics); fall back to the original target, then to a
++                    // plain copy as a last resort.
++                    const resolvedSymlink = path.isAbsolute(symlink)
++                        ? symlink
++                        : path.resolve(path.dirname(from), symlink);
++                    const storeMarker = `${path.sep}.pnpm${path.sep}`;
++                    const srcStoreIdx = resolvedSymlink.lastIndexOf(storeMarker);
++                    let storeRoot = null;
++                    if (srcStoreIdx !== -1) {
++                        const toStoreIdx = to.lastIndexOf(storeMarker);
++                        if (toStoreIdx !== -1) {
++                            storeRoot = to.slice(0, toStoreIdx);
++                        }
++                        else {
++                            let dir = path.dirname(to);
++                            while (path.basename(dir) !== "node_modules" && path.dirname(dir) !== dir) {
++                                dir = path.dirname(dir);
++                            }
++                            storeRoot = path.basename(dir) === "node_modules" ? dir : null;
++                        }
++                    }
++                    const retargeted = storeRoot === null
++                        ? null
++                        : path.join(storeRoot, resolvedSymlink.slice(srcStoreIdx + 1));
++                    // The .pnpm copies may be copied later in this same loop, so
++                    // also accept targets that are scheduled to exist. Junctions
++                    // do not require the target to exist at creation time.
++                    const willExist = (dir) => {
++                        const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
++                        for (const dst of filesToCopy.values()) {
++                            if (dst.startsWith(prefix)) {
++                                return true;
++                            }
++                        }
++                        return false;
++                    };
++                    const candidates = retargeted !== null && (existsSync(retargeted) || willExist(retargeted))
++                        ? [retargeted, resolvedSymlink]
++                        : [resolvedSymlink];
++                    let linked = false;
++                    for (const target of candidates) {
++                        try {
++                            symlinkSync(target, to, "junction");
++                            linked = true;
++                            break;
++                        }
++                        catch {
++                            // try the next candidate
++                        }
++                    }
++                    if (!linked) {
++                        try {
++                            cpSync(resolvedSymlink, to, { recursive: true, dereference: true });
++                        }
++                        catch (copyError) {
++                            logger.debug("Error copying symlink target:", copyError);
++                            erroredFiles.push(to);
++                        }
++                    }
++                }
++                else if (e.code !== "EEXIST") {
+                     throw e;
+                 }
+             }

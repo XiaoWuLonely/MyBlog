@@ -4,7 +4,7 @@ import { Mail, MapPin, Milestone, Sparkles } from "lucide-react";
 import { Reveal } from "@/components/motion/reveal";
 import { ActionLink, GlassPanel, Pill, SoftPanel } from "@/components/site/ui";
 import { aboutHighlights, aboutSkills, siteConfig, socialLinks, timeline } from "@/content/site";
-import { getAllProjects } from "@/lib/projects";
+import { getCachedAllProjects } from "@/lib/cached-content";
 import { MessageForm } from "./message-form";
 
 export const metadata: Metadata = {
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AboutPage() {
-  const projects = await getAllProjects();
+  const projects = await getCachedAllProjects();
 
   return (
     <div className="space-y-6 pb-8 pt-2">

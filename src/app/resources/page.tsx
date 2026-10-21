@@ -6,9 +6,9 @@ import {
   type ResourceFilters,
 } from "@/lib/resources-shared";
 import {
-  getAllResources,
-  getResourceCategories,
-} from "@/lib/resources";
+  getCachedAllResources,
+  getCachedResourceCategories,
+} from "@/lib/cached-content";
 import { ResourcesClient } from "./resources-client";
 
 type PageProps = {
@@ -61,8 +61,8 @@ function ResourcesFallback() {
 async function ResourcesPageContent({ searchParams }: PageProps) {
   const resolvedSearchParams = await searchParams;
   const [resources, categories, canManage] = await Promise.all([
-    getAllResources(),
-    getResourceCategories(),
+    getCachedAllResources(),
+    getCachedResourceCategories(),
     isAdminRequest(),
   ]);
   const filters = normalizeResourceFiltersWithCategories(resolvedSearchParams, categories);

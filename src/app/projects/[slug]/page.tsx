@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { GitBranch } from "lucide-react";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { AdminDeleteButton } from "@/components/site/admin-delete-button";
 import {
   DetailAttachmentsSection,
@@ -11,9 +12,10 @@ import {
   DetailRelatedSection,
 } from "@/components/site/detail-shell";
 import { isAdminRequest } from "@/lib/admin-auth-server";
+import { getCachedAllProjects, getCachedProjectDetailBySlug } from "@/lib/cached-content";
 import { buildDetailAttachmentItems, buildDetailMetaChips, resolveDetailSummary } from "@/lib/detail-shell";
 import { buildEditorLoadHref } from "@/lib/editor";
-import { getAllProjects, getProjectDetailBySlug, getProjectSlugs } from "@/lib/projects";
+import { getProjectSlugs } from "@/lib/projects";
 import { formatDate } from "@/lib/utils";
 import { ProjectDetailContent } from "../project-detail-content";
 
@@ -28,7 +30,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const project = await getProjectDetailBySlug(slug);
+  const project = await getCachedProjectDetailBySlug(slug);
 
   if (!project) {
     return {};
@@ -42,15 +44,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+// 管理员的编辑/删除入口需要读 cookies，放入 Suspense 动态洞以保持页面外壳可缓存。
+async function ProjectDetailAdminActions({ slug }: { slug: string }) {
+  if (!(await isAdminRequest())) {
+    return null;
+  }
+
+  return (
+    <>
+      <DetailBackLink href={buildEditorLoadHref("project", slug)} label="编辑" transitionKey={`project-edit-${slug}`} />
+      <AdminDeleteButton category="project" slug={slug} redirectHref="/projects" variant="inline">
+        删除
+      </AdminDeleteButton>
+    </>
+  );
+}
+
 export default async function ProjectDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const project = await getProjectDetailBySlug(slug);
+  const project = await getCachedProjectDetailBySlug(slug);
 
   if (!project) {
     notFound();
   }
 
-  const [canManage, allProjects] = await Promise.all([isAdminRequest(), getAllProjects()]);
+  const allProjects = await getCachedAllProjects();
   const summary = resolveDetailSummary(project.meta.summary, project.meta.description);
   const related = allProjects.filter((item) => item.slug !== slug).slice(0, 3);
 
@@ -59,18 +77,9 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       backLink={
         <div className="flex flex-wrap items-center gap-3">
           <DetailBackLink href="/projects" label="返回项目列表" transitionKey="project-back" />
-          {canManage ? (
-            <>
-              <DetailBackLink
-                href={buildEditorLoadHref("project", project.meta.slug)}
-                label="编辑"
-                transitionKey={`project-edit-${project.meta.slug}`}
-              />
-              <AdminDeleteButton category="project" slug={project.meta.slug} redirectHref="/projects" variant="inline">
-                删除
-              </AdminDeleteButton>
-            </>
-          ) : null}
+          <Suspense fallback={null}>
+            <ProjectDetailAdminActions slug={project.meta.slug} />
+          </Suspense>
         </div>
       }
       eyebrow={

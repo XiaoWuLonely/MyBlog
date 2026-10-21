@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { Boxes, Grid2x2, Sparkles, SquareStack } from "lucide-react";
+import { Suspense } from "react";
 import { Reveal } from "@/components/motion/reveal";
 import { AdminDeleteButton } from "@/components/site/admin-delete-button";
 import { RouteLink } from "@/components/site/route-link";
 import { GlassPanel, Pill } from "@/components/site/ui";
 import { isAdminRequest } from "@/lib/admin-auth-server";
+import { getCachedAllProjects } from "@/lib/cached-content";
 import { buildEditorLoadHref } from "@/lib/editor";
-import { getAllProjects } from "@/lib/projects";
 
 export const metadata: Metadata = {
   title: "项目",
@@ -40,11 +41,29 @@ function projectIcon(icon: "grid" | "spark" | "pen" | "layers") {
   }
 }
 
+// 管理员的编辑/删除入口需要读 cookies，放入 Suspense 动态洞以保持列表页外壳可缓存。
+async function ProjectCardAdminActions({ slug }: { slug: string }) {
+  if (!(await isAdminRequest())) {
+    return null;
+  }
+
+  return (
+    <>
+      <RouteLink
+        href={buildEditorLoadHref("project", slug)}
+        className="theme-surface inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-primary"
+      >
+        编辑
+      </RouteLink>
+      <AdminDeleteButton category="project" slug={slug} variant="inline">
+        删除
+      </AdminDeleteButton>
+    </>
+  );
+}
+
 export default async function ProjectsPage() {
-  const [projects, canManage] = await Promise.all([
-    getAllProjects(),
-    isAdminRequest(),
-  ]);
+  const projects = await getCachedAllProjects();
 
   return (
     <div className="space-y-6 pb-8 pt-2">
@@ -123,23 +142,9 @@ export default async function ProjectsPage() {
                   >
                     预览
                   </RouteLink>
-                  {canManage ? (
-                    <>
-                      <RouteLink
-                        href={buildEditorLoadHref("project", project.slug)}
-                        className="theme-surface inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-primary"
-                      >
-                        编辑
-                      </RouteLink>
-                      <AdminDeleteButton
-                        category="project"
-                        slug={project.slug}
-                        variant="inline"
-                      >
-                        删除
-                      </AdminDeleteButton>
-                    </>
-                  ) : null}
+                  <Suspense fallback={null}>
+                    <ProjectCardAdminActions slug={project.slug} />
+                  </Suspense>
                 </div>
               </GlassPanel>
             </Reveal>

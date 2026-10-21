@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { ExternalLink } from "lucide-react";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { AdminDeleteButton } from "@/components/site/admin-delete-button";
 import {
   DetailAttachmentsSection,
@@ -11,10 +12,11 @@ import {
   DetailRelatedSection,
 } from "@/components/site/detail-shell";
 import { isAdminRequest } from "@/lib/admin-auth-server";
+import { getCachedRelatedResources, getCachedResourceDetailBySlug } from "@/lib/cached-content";
 import { buildDetailAttachmentItems, buildDetailMetaChips, resolveDetailSummary } from "@/lib/detail-shell";
 import { buildEditorLoadHref } from "@/lib/editor";
 import { buildResourcesHref, buildResourceDetailHref, type ResourceFilters } from "@/lib/resources-shared";
-import { getRelatedResources, getResourceDetailBySlug, getResourceSlugs } from "@/lib/resources";
+import { getResourceSlugs } from "@/lib/resources";
 import { ResourceDetailContent } from "../resource-detail-content";
 
 type PageProps = {
@@ -29,7 +31,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const resource = await getResourceDetailBySlug(slug);
+  const resource = await getCachedResourceDetailBySlug(slug);
 
   if (!resource) {
     return {};
@@ -43,39 +45,70 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+// 返回链接依赖 searchParams（运行时数据），放入 Suspense 动态洞以保持页面外壳可缓存。
+async function ResourcesBackLink({ searchParams }: { searchParams: Promise<ResourceFilters> }) {
+  const filters = await searchParams;
+  return <DetailBackLink href={buildResourcesHref(filters)} preserveScroll label="返回资源列表" transitionKey="resource-back" />;
+}
+
+// 管理员的编辑/删除入口需要读 cookies，同样放入 Suspense 动态洞。
+async function ResourceAdminActions({ slug, searchParams }: { slug: string; searchParams: Promise<ResourceFilters> }) {
+  if (!(await isAdminRequest())) {
+    return null;
+  }
+
+  const filters = await searchParams;
+
+  return (
+    <>
+      <DetailBackLink href={buildEditorLoadHref("resource", slug)} label="编辑" transitionKey={`resource-edit-${slug}`} />
+      <AdminDeleteButton category="resource" slug={slug} redirectHref={buildResourcesHref(filters)} variant="inline">
+        删除
+      </AdminDeleteButton>
+    </>
+  );
+}
+
+// 相关资源的链接保留当前筛选参数，searchParams 仅在洞内读取。
+async function ResourceRelatedSection({ slug, searchParams }: { slug: string; searchParams: Promise<ResourceFilters> }) {
+  const [filters, related] = await Promise.all([searchParams, getCachedRelatedResources(slug, 3)]);
+
+  return (
+    <DetailRelatedSection
+      title="相关资源"
+      items={related.map((item) => ({
+        title: item.title,
+        summary: resolveDetailSummary(item.summary, item.description),
+        href: buildResourceDetailHref(item.slug, filters),
+        transitionKey: `resource-${item.slug}`,
+        meta: item.category,
+      }))}
+    />
+  );
+}
+
 export default async function ResourceDetailPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
-  const filters = await searchParams;
-  const resource = await getResourceDetailBySlug(slug);
+  const resource = await getCachedResourceDetailBySlug(slug);
 
   if (!resource) {
     notFound();
   }
 
-  const [canManage, related] = await Promise.all([
-    isAdminRequest(),
-    getRelatedResources(resource.meta.slug, 3),
-  ]);
   const summary = resolveDetailSummary(resource.meta.summary, resource.meta.description);
-  const backHref = buildResourcesHref(filters);
 
   return (
     <DetailPageShell
       backLink={
         <div className="flex flex-wrap items-center gap-3">
-          <DetailBackLink href={backHref} preserveScroll label="返回资源列表" transitionKey="resource-back" />
-          {canManage ? (
-            <>
-              <DetailBackLink
-                href={buildEditorLoadHref("resource", resource.meta.slug)}
-                label="编辑"
-                transitionKey={`resource-edit-${resource.meta.slug}`}
-              />
-              <AdminDeleteButton category="resource" slug={resource.meta.slug} redirectHref={backHref} variant="inline">
-                删除
-              </AdminDeleteButton>
-            </>
-          ) : null}
+          <Suspense
+            fallback={<DetailBackLink href="/resources" preserveScroll label="返回资源列表" transitionKey="resource-back" />}
+          >
+            <ResourcesBackLink searchParams={searchParams} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <ResourceAdminActions slug={resource.meta.slug} searchParams={searchParams} />
+          </Suspense>
         </div>
       }
       eyebrow={
@@ -123,16 +156,9 @@ export default async function ResourceDetailPage({ params, searchParams }: PageP
         />
       }
       related={
-        <DetailRelatedSection
-          title="相关资源"
-          items={related.map((item) => ({
-            title: item.title,
-            summary: resolveDetailSummary(item.summary, item.description),
-            href: buildResourceDetailHref(item.slug, filters),
-            transitionKey: `resource-${item.slug}`,
-            meta: item.category,
-          }))}
-        />
+        <Suspense fallback={null}>
+          <ResourceRelatedSection slug={resource.meta.slug} searchParams={searchParams} />
+        </Suspense>
       }
     />
   );

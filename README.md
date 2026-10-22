@@ -146,6 +146,30 @@ npx wrangler d1 execute myblog --remote --file migrations/0003_next_tag_cache.sq
 
 Editor publish/update/delete operations call `revalidateTag("content:<category>", "max")`, so cached public pages refresh within seconds of a content change. Do not use the `{ expire: 0 }` revalidation profile — the D1 tag cache does not honor it.
 
+### ISR revalidation queue
+
+Pages carry `stale-while-revalidate`, so once a cached page passes its `cacheLife.revalidate` window the adapter has to re-render it in the background. That background job goes through OpenNext's queue (`open-next.config.ts` → `queue: doQueue`), which needs two bindings in `wrangler.jsonc`:
+
+- `durable_objects` binding `NEXT_CACHE_DO_QUEUE` → class `DOQueueHandler`, declared in `migrations` as `new_sqlite_classes` (the handler uses `ctx.storage.sql`).
+- `services` binding `WORKER_SELF_REFERENCE` pointing at this Worker's own name; the queue re-renders pages by sending a signed `HEAD` request back to the Worker.
+
+Leaving `queue` at the default (`dummy`) makes every stale-page hit log `Failed to revalidate stale page <path>` and the page never refreshes until a tag revalidation happens.
+
+The Durable Object binding brings a pending migration (`v1`). Workers Builds runs **two different commands**: the **Deploy command** (`npx wrangler deploy`, production branch only) and the **Preview command** (`npx wrangler versions upload` here, every non-production branch). Only `wrangler deploy` can apply Durable Object migrations, so a build on a feature/PR branch fails with:
+
+```
+This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`.
+Durable Object migrations must be applied with `wrangler deploy`.
+```
+
+This is expected on non-production branches, not a misconfiguration. Apply the migration once through the production branch build (merge the change) or by running `npx wrangler deploy` locally; after `v1` is applied, preview builds succeed again until a new migration tag is added. Verify with a dry run before deploying:
+
+```powershell
+npx wrangler deploy --dry-run --outdir .open-next/dryrun
+```
+
+The dry run must list `env.NEXT_CACHE_DO_QUEUE (DOQueueHandler) Durable Object` and `env.WORKER_SELF_REFERENCE (wulongblog) Worker`.
+
 Check the remote tables:
 
 ```powershell

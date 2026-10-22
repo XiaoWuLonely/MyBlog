@@ -23,9 +23,12 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
+// Cache Components 要求 generateStaticParams 至少返回一个样本参数。
+// 内容只存在云端 D1，若校验/构建期枚举不到（如本地 dev 拿不到 D1 上下文），
+// 退回占位 slug 交给页面 notFound()，真实页面在请求时按需渲染。
 export async function generateStaticParams() {
   const slugs = await getProjectSlugs();
-  return slugs.map((slug) => ({ slug }));
+  return (slugs.length > 0 ? slugs : ["__placeholder__"]).map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

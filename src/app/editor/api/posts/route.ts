@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   createEditorWritePayload,
-  deleteEditorContentFile,
   type EditorUploadedFile,
-  updateEditorContentFile,
 } from "@/lib/content";
 import { isAdminRequest } from "@/lib/admin-auth-server";
 import { isCloudflareRuntime } from "@/lib/runtime-environment";
@@ -20,7 +18,6 @@ import {
 } from "@/lib/editor";
 import type { EditorDeleteResult, EditorWriteResult } from "@/lib/publish-shared";
 import {
-  editorContentRootDir,
   revalidateEditorContentRoutes,
   revalidatePreviousContentRoute,
 } from "../shared";
@@ -183,28 +180,6 @@ export async function POST(request: Request) {
       { status: 503 },
     );
   }
-
-  const result = await updateEditorContentFile({
-    rootDir: editorContentRootDir(),
-    payload: prepared,
-    coverUpload,
-    assetUploads,
-  });
-
-  if (result.ok) {
-    revalidateEditorContentRoutes(result.category);
-
-    if (
-      prepared.source &&
-      (prepared.source.originalCategory !== result.category || prepared.source.originalSlug !== result.slug)
-    ) {
-      revalidatePreviousContentRoute(prepared.source.originalCategory);
-    }
-  }
-
-  return NextResponse.json<EditorWriteResult>(result, {
-    status: result.ok ? 200 : 422,
-  });
 }
 
 export async function DELETE(request: Request) {
@@ -280,23 +255,4 @@ export async function DELETE(request: Request) {
       { status: 503 },
     );
   }
-
-  const result = await deleteEditorContentFile({
-    rootDir: editorContentRootDir(),
-    source,
-  });
-
-  revalidateEditorContentRoutes(source.originalCategory);
-
-  const response: EditorDeleteResult = result.ok
-    ? {
-        ok: true,
-        message: result.message,
-        redirectHref: result.redirectHref,
-      }
-    : result;
-
-  return NextResponse.json<EditorDeleteResult>(response, {
-    status: result.ok ? 200 : 422,
-  });
 }

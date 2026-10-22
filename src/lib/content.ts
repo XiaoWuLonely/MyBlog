@@ -6,8 +6,8 @@ import type {
   ProjectContentFrontmatter,
   ResourceContentFrontmatter,
 } from "./content-shared";
-import { findContentFileBySlug, normalizeContentSlug } from "./content-slug.js";
-import type { EditorCategory, EditorDraft, EditorDraftSource, EditorFieldErrors } from "./editor-shared";
+import { normalizeContentSlug } from "./content-slug.js";
+import type { EditorCategory, EditorDraft, EditorDraftSource } from "./editor-shared";
 import {
   buildAttachmentAssetReference,
   buildCoverAssetReference,
@@ -66,16 +66,6 @@ export type PersistedEditorDraftResult = {
   draft: EditorDraft;
   source: EditorDraftSource;
 };
-
-export type EditorWriteValidationResult =
-  | {
-      ok: true;
-    }
-  | {
-      ok: false;
-      message: string;
-      errors: EditorFieldErrors;
-    };
 
 const CATEGORY_LABELS: Record<EditorCategory, string> = {
   archive: "归档",
@@ -213,45 +203,6 @@ export function buildContentFileSource(
   });
 }
 
-export async function parseContentCollectionItem<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
-  filePath: string,
-) {
-  const source = await fs.readFile(filePath, "utf8");
-  return parseContentCollectionSource<T>(filePath, source);
-}
-
-export function parseContentCollectionSource<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
-  filePath: string,
-  source: string,
-) {
-  const { data, content } = matter(source);
-
-  return {
-    meta: data as T,
-    content,
-    filePath,
-  } satisfies ContentCollectionItem<T>;
-}
-
-// 仅供编辑器写本地链路使用（Commit 6 会一起删除）。
-export async function readCollectionItems<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
-  directory: string,
-) {
-  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
-
-  if (entries.length === 0) {
-    return [];
-  }
-
-  const files = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".mdx"))
-    .map((entry) => path.join(directory, entry.name));
-
-  const items = await Promise.all(files.map((filePath) => parseContentCollectionItem<T>(filePath)));
-
-  return items.sort((a, b) => +new Date(b.meta.date) - +new Date(a.meta.date));
-}
-
 export async function readContentCollection<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
   db = getD1Binding(),
   category,
@@ -264,7 +215,6 @@ export async function readContentCollection<T extends BaseContentFrontmatter = B
   }
 
   const { items, deletedSlugs } = await listAllD1Content<T>(db, category);
-  // deletedSlugs 由上层墓碑读场景处理（readContentBySlug），集合读取直接过滤掉墓碑对应的 slug。
   return items.filter((item) => !deletedSlugs.has(normalizeContentSlug(item.meta.slug)));
 }
 
@@ -331,28 +281,12 @@ export async function readContentBySlug<T extends BaseContentFrontmatter = BaseC
     : load();
 }
 
-function getAbsoluteContentFilePath({
-  rootDir,
-  category,
-  slug,
-}: {
-  rootDir: string;
-  category: EditorCategory;
-  slug: string;
-}) {
-  return path.join(rootDir, getContentDirectoryForCategory(category), `${slug}.mdx`);
-}
-
 function inferDraftScheduleAt(date: string | undefined) {
   if (!date) {
     return null;
   }
 
   return `${date.slice(0, 10)}T00:00`;
-}
-
-function toRelativeOutputPath(absoluteOutputPath: string) {
-  return path.relative(process.cwd(), absoluteOutputPath).replaceAll("\\", "/");
 }
 
 function sanitizeAssetBaseName(name: string) {
@@ -566,121 +500,6 @@ export function createPersistedEditorDraft({
   };
 }
 
-export async function validateEditorWriteTarget({
-  rootDir,
-  category,
-  slug,
-}: {
-  rootDir: string;
-  category: EditorCategory;
-  slug: string;
-}): Promise<EditorWriteValidationResult> {
-  const outputPath = path.join(rootDir, getContentDirectoryForCategory(category), `${slug}.mdx`);
-
-  try {
-    await fs.access(outputPath);
-
-    return {
-      ok: false,
-      message: "slug 已存在，请更换后再发布。",
-      errors: {
-        slug: "当前 slug 已存在对应内容文件。",
-      },
-    };
-  } catch {
-    return { ok: true };
-  }
-}
-
-export async function getPersistedEditorDraftBySource({
-  rootDir,
-  category,
-  slug,
-}: {
-  rootDir: string;
-  category: EditorCategory;
-  slug: string;
-}): Promise<PersistedEditorDraftResult | null> {
-  const directory = path.join(rootDir, getContentDirectoryForCategory(category));
-
-  try {
-    const match = await findContentFileBySlug(directory, slug);
-    if (!match) {
-      return null;
-    }
-
-    const item = parseContentCollectionSource(match.filePath, match.source);
-    return createPersistedEditorDraft({
-      category,
-      slug,
-      frontmatter: item.meta,
-      content: item.content,
-    });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-async function removeFileIfExists(filePath: string) {
-  await fs.unlink(filePath).catch((error: NodeJS.ErrnoException) => {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-  });
-}
-
-export async function deleteEditorContentFile({
-  rootDir,
-  source,
-}: {
-  rootDir: string;
-  source: EditorDraftSource;
-}) {
-  const directory = path.join(rootDir, getContentDirectoryForCategory(source.originalCategory));
-  const match = await findContentFileBySlug(directory, source.originalSlug);
-  const filePath =
-    match?.filePath ??
-    getAbsoluteContentFilePath({
-      rootDir,
-      category: source.originalCategory,
-      slug: source.originalSlug,
-    });
-  const assetDirectory = getPublicAssetDirectory(source.originalCategory, source.originalSlug);
-
-  await removeFileIfExists(filePath);
-  await removeDirectoryIfExists(assetDirectory);
-
-  return {
-    ok: true,
-    message: "Content deleted.",
-    redirectHref:
-      source.originalCategory === "archive"
-        ? "/archive"
-        : source.originalCategory === "project"
-          ? "/projects"
-          : "/resources",
-  } as const;
-}
-
-async function writeContentAtPath({
-  absoluteOutputPath,
-  payload,
-  now,
-  persistedAssets,
-}: {
-  absoluteOutputPath: string;
-  payload: EditorWritePayload;
-  now?: () => string;
-  persistedAssets?: PersistedEditorAssets;
-}) {
-  await fs.mkdir(path.dirname(absoluteOutputPath), { recursive: true });
-  const source = buildContentFileSource(payload, now, persistedAssets);
-  await fs.writeFile(absoluteOutputPath, source, "utf8");
-}
-
 export function buildEditorWriteResult({
   payload,
   outputPath,
@@ -708,138 +527,11 @@ export function buildEditorWriteResult({
 
   return {
     ok: true,
-    message: `内容已写入${CATEGORY_LABELS[payload.category]}目录。`,
+    message: `内容已写入${CATEGORY_LABELS[payload.category]}。`,
     slug: payload.slug,
     category: payload.category,
     outputPath,
     draft: persisted.draft,
     source: persisted.source,
   };
-}
-
-export async function writeEditorContentFile({
-  rootDir,
-  payload,
-  coverUpload,
-  assetUploads,
-  now,
-}: {
-  rootDir: string;
-  payload: EditorWritePayload;
-  coverUpload?: EditorUploadedFile | null;
-  assetUploads?: EditorUploadedFile[];
-  now?: () => string;
-}): Promise<EditorWriteResult> {
-  const validation = await validateEditorWriteTarget({
-    rootDir,
-    category: payload.category,
-    slug: payload.slug,
-  });
-
-  if (!validation.ok) {
-    return validation;
-  }
-
-  const targetDirectory = path.join(rootDir, getContentDirectoryForCategory(payload.category));
-  await fs.mkdir(targetDirectory, { recursive: true });
-
-  const persistedAssets = await persistEditorAssets({
-    payload,
-    coverUpload,
-    assetUploads,
-  });
-  const absoluteOutputPath = path.join(targetDirectory, `${payload.slug}.mdx`);
-  await writeContentAtPath({
-    absoluteOutputPath,
-    payload,
-    persistedAssets,
-    now,
-  });
-
-  return buildEditorWriteResult({
-    payload,
-    outputPath: toRelativeOutputPath(absoluteOutputPath),
-    persistedAssets,
-    now,
-  });
-}
-
-export async function updateEditorContentFile({
-  rootDir,
-  payload,
-  coverUpload,
-  assetUploads,
-  now,
-}: {
-  rootDir: string;
-  payload: EditorWritePayload;
-  coverUpload?: EditorUploadedFile | null;
-  assetUploads?: EditorUploadedFile[];
-  now?: () => string;
-}): Promise<EditorWriteResult> {
-  const source = payload.source;
-
-  if (!source) {
-    return writeEditorContentFile({ rootDir, payload, coverUpload, assetUploads, now });
-  }
-
-  const originalDirectory = path.join(rootDir, getContentDirectoryForCategory(source.originalCategory));
-  const originalMatch = await findContentFileBySlug(originalDirectory, source.originalSlug);
-  const originalPath =
-    originalMatch?.filePath ??
-    getAbsoluteContentFilePath({
-      rootDir,
-      category: source.originalCategory,
-      slug: source.originalSlug,
-    });
-
-  const nextPath =
-    source.originalCategory === payload.category && source.originalSlug === payload.slug
-      ? originalPath
-      : getAbsoluteContentFilePath({
-          rootDir,
-          category: payload.category,
-          slug: payload.slug,
-        });
-
-  if (originalPath !== nextPath) {
-    const validation = await validateEditorWriteTarget({
-      rootDir,
-      category: payload.category,
-      slug: payload.slug,
-    });
-
-    if (!validation.ok) {
-      return validation;
-    }
-  }
-
-  const originalAssetDirectory = getPublicAssetDirectory(source.originalCategory, source.originalSlug);
-  const nextAssetDirectory = getPublicAssetDirectory(payload.category, payload.slug);
-  if (originalAssetDirectory !== nextAssetDirectory) {
-    await removeDirectoryIfExists(originalAssetDirectory);
-  }
-
-  const persistedAssets = await persistEditorAssets({
-    payload,
-    coverUpload,
-    assetUploads,
-  });
-  await writeContentAtPath({
-    absoluteOutputPath: nextPath,
-    payload,
-    persistedAssets,
-    now,
-  });
-
-  if (originalPath !== nextPath) {
-    await removeFileIfExists(originalPath);
-  }
-
-  return buildEditorWriteResult({
-    payload,
-    outputPath: toRelativeOutputPath(nextPath),
-    persistedAssets,
-    now,
-  });
 }

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getPersistedEditorDraftBySource } from "@/lib/content";
 import { sanitizeAdminNextPath } from "@/lib/admin-auth";
 import { isAdminRequest } from "@/lib/admin-auth-server";
 import { getD1Binding } from "@/lib/cloudflare-bindings";
@@ -11,7 +10,6 @@ import {
   type EditorDraft,
   type EditorDraftSource,
 } from "@/lib/editor";
-import { editorContentRootDir } from "./api/shared";
 import { EditorClient } from "./editor-client";
 
 export const metadata: Metadata = {
@@ -63,11 +61,7 @@ export default async function EditorPage({ searchParams }: PageProps) {
     const db = getD1Binding();
     const loaded = db
       ? await getD1EditorDraftBySource(db, source)
-      : await getPersistedEditorDraftBySource({
-          rootDir: editorContentRootDir(),
-          category: requestedCategory,
-          slug: requestedSlug,
-        });
+      : null;
 
     if (loaded) {
       initialDraft = loaded.draft;

@@ -1,14 +1,16 @@
 import type { MetadataRoute } from "next";
-import { getAllPosts } from "@/lib/posts";
-import { getAllProjects } from "@/lib/projects";
-import { getAllResources } from "@/lib/resources";
+import {
+  getCachedAllPosts,
+  getCachedAllProjects,
+  getCachedAllResources,
+} from "@/lib/cached-content";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = "https://example.com";
   const [posts, projects, resources] = await Promise.all([
-    getAllPosts(),
-    getAllProjects(),
-    getAllResources(),
+    getCachedAllPosts(),
+    getCachedAllProjects(),
+    getCachedAllResources(),
   ]);
 
   const routes = ["", "/archive", "/projects", "/resources", "/about"].map((route) => ({

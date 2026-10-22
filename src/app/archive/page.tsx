@@ -8,7 +8,7 @@ import {
   normalizeArchiveFiltersWithCategories,
   type ArchiveFilters,
 } from "@/lib/posts-shared";
-import { getAllPosts } from "@/lib/posts";
+import { getCachedAllPosts } from "@/lib/cached-content";
 import { ArchiveClient } from "./archive-client";
 
 export const metadata: Metadata = {
@@ -74,7 +74,7 @@ type PageProps = {
 
 async function ArchivePageContent({ searchParams }: PageProps) {
   const resolvedSearchParams = await searchParams;
-  const [posts, canManage] = await Promise.all([getAllPosts(), isAdminRequest()]);
+  const [posts, canManage] = await Promise.all([getCachedAllPosts(), isAdminRequest()]);
   const categories = [ALL_POSTS_CATEGORY, ...new Set(posts.map((post) => post.category))];
   const filters = normalizeArchiveFiltersWithCategories(resolvedSearchParams, categories);
 

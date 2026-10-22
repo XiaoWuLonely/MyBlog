@@ -22,7 +22,9 @@ import {
   getD1ContentBySlug,
   hasD1ContentRow,
   listAllD1Content,
+  listAllD1ContentMeta,
 } from "./cloudflare-content-store.js";
+import { readThroughD1Cache } from "./d1-cache.js";
 
 export const CONTENT_CATEGORY_DIRECTORY = {
   archive: "posts",
@@ -35,6 +37,12 @@ export type ContentDirectory = (typeof CONTENT_CATEGORY_DIRECTORY)[EditorCategor
 export type ContentCollectionItem<T extends BaseContentFrontmatter = BaseContentFrontmatter> = {
   meta: T;
   content: string;
+  filePath: string;
+};
+
+// 列表场景专用的元数据形态：不含正文，避免为列表页解析 / 传输整篇内容。
+export type ContentCollectionMeta<T extends BaseContentFrontmatter = BaseContentFrontmatter> = {
+  meta: T;
   filePath: string;
 };
 
@@ -266,8 +274,42 @@ export async function readContentCollectionWithD1Fallback<T extends BaseContentF
   return fallback();
 }
 
+// 元数据瘦身版集合读取：公开列表页专用。
+// 仅在未显式传 db（生产默认 binding）时启用 isolate 级 60s TTL 缓存；
+// 测试与编辑器链路显式传 db，绕过缓存保证实时性。
+export async function readContentCollectionMetaWithD1Fallback<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
+  db,
+  category,
+  fallback,
+}: {
+  db?: D1DatabaseBinding | null;
+  category: EditorCategory;
+  fallback: () => Promise<ContentCollectionMeta<T>[]>;
+}) {
+  const useIsolateCache = db === undefined;
+  const resolvedDb = useIsolateCache ? getD1Binding() : db;
+
+  const load = async (): Promise<ContentCollectionMeta<T>[]> => {
+    if (resolvedDb) {
+      const { items: d1Items, deletedSlugs } = await listAllD1ContentMeta<T>(resolvedDb, category);
+
+      if (d1Items.length === 0 && deletedSlugs.size === 0) {
+        return fallback();
+      }
+
+      return d1Items;
+    }
+
+    return fallback();
+  };
+
+  return useIsolateCache && resolvedDb
+    ? readThroughD1Cache(`${category}:list`, load)
+    : load();
+}
+
 export async function readContentBySlugWithD1Fallback<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
-  db = getD1Binding(),
+  db,
   category,
   slug,
   fallback,
@@ -277,19 +319,28 @@ export async function readContentBySlugWithD1Fallback<T extends BaseContentFront
   slug: string;
   fallback: () => Promise<ContentCollectionItem<T> | null>;
 }) {
-  if (db) {
-    const item = await getD1ContentBySlug<T>(db, category, slug);
+  const useIsolateCache = db === undefined;
+  const resolvedDb = useIsolateCache ? getD1Binding() : db;
 
-    if (item) {
-      return item;
+  const load = async (): Promise<ContentCollectionItem<T> | null> => {
+    if (resolvedDb) {
+      const item = await getD1ContentBySlug<T>(resolvedDb, category, slug);
+
+      if (item) {
+        return item;
+      }
+
+      if (await hasD1ContentRow(resolvedDb, category, slug)) {
+        return null;
+      }
     }
 
-    if (await hasD1ContentRow(db, category, slug)) {
-      return null;
-    }
-  }
+    return fallback();
+  };
 
-  return fallback();
+  return useIsolateCache && resolvedDb
+    ? readThroughD1Cache(`${category}:item:${normalizeContentSlug(slug)}`, load)
+    : load();
 }
 
 function getAbsoluteContentFilePath({

@@ -104,64 +104,75 @@ export async function POST(request: Request) {
     const db = getD1Binding();
 
     if (db) {
-      const targetExisting = await getD1ContentBySlug(db, prepared.category, prepared.slug);
-      const isSameSource =
-        prepared.source &&
-        prepared.source.originalCategory === prepared.category &&
-        prepared.source.originalSlug === prepared.slug;
+      try {
+        const targetExisting = await getD1ContentBySlug(db, prepared.category, prepared.slug);
+        const isSameSource =
+          prepared.source &&
+          prepared.source.originalCategory === prepared.category &&
+          prepared.source.originalSlug === prepared.slug;
 
-      if (targetExisting && !isSameSource) {
-        return NextResponse.json<EditorWriteResult>(
-          {
-            ok: false,
-            message: "slug already exists. Please choose another slug.",
-            errors: {
-              slug: "Current slug already exists.",
+        if (targetExisting && !isSameSource) {
+          return NextResponse.json<EditorWriteResult>(
+            {
+              ok: false,
+              message: "slug already exists. Please choose another slug.",
+              errors: {
+                slug: "Current slug already exists.",
+              },
             },
-          },
-          { status: 422 },
-        );
-      }
+            { status: 422 },
+          );
+        }
 
-      const assetValidation = validateCloudflareAssetUploads({
-        coverUpload,
-        assetUploads,
-      });
+        const assetValidation = validateCloudflareAssetUploads({
+          coverUpload,
+          assetUploads,
+        });
 
-      if (!assetValidation.ok) {
+        if (!assetValidation.ok) {
+          return NextResponse.json<EditorWriteResult>(
+            {
+              ok: false,
+              message: assetValidation.message,
+            },
+            { status: 422 },
+          );
+        }
+
+        const result = await saveD1Content({
+          db,
+          payload: prepared,
+        });
+
+        if (
+          result.ok &&
+          prepared.source &&
+          (prepared.source.originalCategory !== result.category || prepared.source.originalSlug !== result.slug)
+        ) {
+          await deleteD1Content({
+            db,
+            source: prepared.source,
+          });
+          revalidatePreviousContentRoute(prepared.source.originalCategory);
+        }
+
+        if (result.ok) {
+          revalidateEditorContentRoutes(result.category);
+        }
+
+        return NextResponse.json<EditorWriteResult>(result, {
+          status: result.ok ? 200 : 422,
+        });
+      } catch (error) {
+        console.error("[editor] D1 publish failed", error);
         return NextResponse.json<EditorWriteResult>(
           {
             ok: false,
-            message: assetValidation.message,
+            message: "数据库写入失败，请稍后重试。",
           },
-          { status: 422 },
+          { status: 502 },
         );
       }
-
-      const result = await saveD1Content({
-        db,
-        payload: prepared,
-      });
-
-      if (
-        result.ok &&
-        prepared.source &&
-        (prepared.source.originalCategory !== result.category || prepared.source.originalSlug !== result.slug)
-      ) {
-        await deleteD1Content({
-          db,
-          source: prepared.source,
-        });
-        revalidatePreviousContentRoute(prepared.source.originalCategory, prepared.source.originalSlug);
-      }
-
-      if (result.ok) {
-        revalidateEditorContentRoutes(result.category, result.slug);
-      }
-
-      return NextResponse.json<EditorWriteResult>(result, {
-        status: result.ok ? 200 : 422,
-      });
     }
 
     return NextResponse.json<EditorWriteResult>(
@@ -181,13 +192,13 @@ export async function POST(request: Request) {
   });
 
   if (result.ok) {
-    revalidateEditorContentRoutes(result.category, result.slug);
+    revalidateEditorContentRoutes(result.category);
 
     if (
       prepared.source &&
       (prepared.source.originalCategory !== result.category || prepared.source.originalSlug !== result.slug)
     ) {
-      revalidatePreviousContentRoute(prepared.source.originalCategory, prepared.source.originalSlug);
+      revalidatePreviousContentRoute(prepared.source.originalCategory);
     }
   }
 
@@ -238,17 +249,27 @@ export async function DELETE(request: Request) {
     const db = getD1Binding();
 
     if (db) {
-      const result = await deleteD1Content({
-        db,
-        source,
-      });
+      try {
+        const result = await deleteD1Content({
+          db,
+          source,
+        });
 
-      revalidateEditorContentRoutes(source.originalCategory, source.originalSlug);
-      revalidatePreviousContentRoute(source.originalCategory, source.originalSlug);
+        revalidateEditorContentRoutes(source.originalCategory);
 
-      return NextResponse.json<EditorDeleteResult>(result, {
-        status: 200,
-      });
+        return NextResponse.json<EditorDeleteResult>(result, {
+          status: 200,
+        });
+      } catch (error) {
+        console.error("[editor] D1 delete failed", error);
+        return NextResponse.json<EditorDeleteResult>(
+          {
+            ok: false,
+            message: "数据库删除失败，请稍后重试。",
+          },
+          { status: 502 },
+        );
+      }
     }
 
     return NextResponse.json<EditorDeleteResult>(
@@ -265,8 +286,7 @@ export async function DELETE(request: Request) {
     source,
   });
 
-  revalidateEditorContentRoutes(source.originalCategory, source.originalSlug);
-  revalidatePreviousContentRoute(source.originalCategory, source.originalSlug);
+  revalidateEditorContentRoutes(source.originalCategory);
 
   const response: EditorDeleteResult = result.ok
     ? {

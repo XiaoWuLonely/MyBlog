@@ -18,6 +18,21 @@
       "database_id": "eb3c77e2-9d4e-4ca9-b615-9bd0d5a513f6",
       "remote": true,
     },
+    {
+      // OpenNext revalidateTag 账本（revalidations 表），复用同一个 myblog 库。
+      "binding": "NEXT_TAG_CACHE_D1",
+      "database_name": "myblog",
+      "database_id": "eb3c77e2-9d4e-4ca9-b615-9bd0d5a513f6",
+      "remote": true,
+    },
+  ],
+  "kv_namespaces": [
+    {
+      // OpenNext ISR 增量缓存（use cache / 页面缓存条目）。
+      "binding": "NEXT_INC_CACHE_KV",
+      "id": "13f73d87b7f044739969d3b0185d2356",
+      "remote": true,
+    },
   ],
   "vars": {
     "MYBLOG_FILE_STORAGE": "readonly",

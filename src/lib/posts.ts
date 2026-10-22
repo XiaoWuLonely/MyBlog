@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { cache } from "react";
 import matter from "gray-matter";
 import readingTime from "reading-time";
 import type { BaseContentFrontmatter } from "./content-shared";
@@ -7,7 +8,7 @@ import { findContentFileBySlug, normalizeContentSlug } from "./content-slug.js";
 import {
   readCollectionItems,
   readContentBySlugWithD1Fallback,
-  readContentCollectionWithD1Fallback,
+  readContentCollectionMetaWithD1Fallback,
 } from "./content.js";
 import { getStaticContentEntries } from "./static-content.js";
 
@@ -25,7 +26,8 @@ export type PostFrontmatter = BaseContentFrontmatter & {
 };
 
 export type PostMeta = PostFrontmatter & {
-  readingMinutes: string;
+  // 列表场景不再逐篇计算阅读时长（需读全文，成本高）；仅详情页提供。
+  readingMinutes?: string;
 };
 
 export async function getPostSlugs() {
@@ -33,23 +35,21 @@ export async function getPostSlugs() {
   return files.filter((file) => file.endsWith(".mdx")).map((file) => file.replace(/\.mdx$/, ""));
 }
 
-export async function getAllPosts() {
-  const items = await readContentCollectionWithD1Fallback<PostFrontmatter>({
+// React cache：同一请求内（generateMetadata / 页面 / 相邻文章）去重，避免重复 D1 查询。
+export const getAllPosts = cache(async () => {
+  const items = await readContentCollectionMetaWithD1Fallback<PostFrontmatter>({
     category: "archive",
-    fallback: () => readCollectionItems<PostFrontmatter>(POSTS_DIR),
+    fallback: async () =>
+      (await readCollectionItems<PostFrontmatter>(POSTS_DIR)).map(({ meta, filePath }) => ({
+        meta,
+        filePath,
+      })),
   });
 
   return items
-    .map((item) => {
-      const stats = readingTime(item.content);
-
-      return {
-        ...item.meta,
-        readingMinutes: `${Math.max(1, Math.ceil(stats.minutes))} min read`,
-      } satisfies PostMeta;
-    })
+    .map((item): PostMeta => ({ ...item.meta }))
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
-}
+});
 
 export async function getFeaturedPosts(limit = 3) {
   const posts = await getAllPosts();
@@ -76,7 +76,7 @@ export async function getPostMeta(slug: string) {
   }
 }
 
-export async function getPostBySlug(slug: string) {
+export const getPostBySlug = cache(async (slug: string) => {
   const item = await readContentBySlugWithD1Fallback<PostFrontmatter>({
     category: "archive",
     slug,
@@ -109,7 +109,7 @@ export async function getPostBySlug(slug: string) {
     } satisfies PostMeta,
     rawContent: item.content,
   };
-}
+});
 
 export async function getAdjacentPosts(slug: string) {
   const posts = await getAllPosts();

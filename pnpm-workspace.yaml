@@ -1,5 +1,18 @@
+# pnpm-workspace.yaml
+# Cloudflare Workers Builds uses pnpm 9.10 by default, which requires an
+# explicit `packages:` key (pnpm 10+ auto-detects monorepos).  This repo is a
+# single-package workspace, so an empty list suffices.
+packages: []
+
 allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
   workerd: true
+
+# pnpm 11+ moved patchedDependencies here from package.json#pnpm.  Cloudflare's
+# pnpm 9 will silently ignore this key — acceptable because the only patch
+# targets Windows junction rebuild issues in OpenNext copyTracedFiles.js, and
+# Cloudflare Linux builds use relative symlinks so the original code works.
+patchedDependencies:
+  '@opennextjs/aws@4.1.4': patches/@opennextjs__aws@4.1.4.patch

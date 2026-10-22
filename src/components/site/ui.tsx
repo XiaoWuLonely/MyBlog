@@ -106,9 +106,11 @@ export function ArticlePreviewCard({
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <Pill active>{post.category}</Pill>
-          <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-            {post.readingMinutes}
-          </span>
+          {post.readingMinutes ? (
+            <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              {post.readingMinutes}
+            </span>
+          ) : null}
         </div>
         <div>
           <h3

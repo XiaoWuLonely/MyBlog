@@ -15,6 +15,8 @@ A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
 - URL-synced search and category filters on the archive page
 - Cloudflare D1 for content and visitor message persistence
 - Static content registry fallback for builds without filesystem access
+- ISR caching for public pages (KV incremental cache + D1 tag cache)
+- Bot/scanner request blocking at the proxy layer
 
 ## Pages
 
@@ -116,6 +118,20 @@ If an existing remote D1 database already has `content_items` but is missing the
 npx wrangler d1 execute myblog --remote --file migrations/0002_messages.sql
 ```
 
+### ISR cache setup
+
+Public pages are cached with Next.js ISR through the OpenNext Cloudflare adapter: rendered pages go to a KV namespace (`NEXT_INC_CACHE_KV`), and cache-tag invalidation records go to a `revalidations` table in the same D1 database (`NEXT_TAG_CACHE_D1`). Both bindings live in `wrangler.jsonc`.
+
+```powershell
+# Create the KV namespace, then copy the printed id into wrangler.jsonc
+npx wrangler kv namespace create NEXT_INC_CACHE_KV
+
+# Apply the tag-cache migration
+npx wrangler d1 execute myblog --remote --file migrations/0003_next_tag_cache.sql
+```
+
+Editor publish/update/delete operations call `revalidateTag("content:<category>", "max")`, so cached public pages refresh within seconds of a content change. Do not use the `{ expire: 0 }` revalidation profile — the D1 tag cache does not honor it.
+
 Check the remote tables:
 
 ```powershell
@@ -142,11 +158,14 @@ The `wrangler.jsonc` contains the D1 database binding (`MYBLOG_DB`). Replace the
 - Production builds use Webpack (`--webpack`) because the OpenNext adapter does not reliably load Next 16 Turbopack server chunks in the Worker runtime.
 - New file uploads (covers, attachments) are rejected on Cloudflare; publish text-only content for now.
 - Visitor messages are stored in the remote D1 database. If message submission fails with `no such table: messages`, run `migrations/0002_messages.sql` against the remote database.
+- Known bot/scanner paths (WordPress probes, `.env`, `.git`, etc.) are answered with a fast 404 in `src/proxy.ts` before they reach the Worker router, keeping them from consuming CPU time.
 
 ## Environment Variables
 
-| Variable               | Required | Description                                   |
-| ---------------------- | -------- | --------------------------------------------- |
-| `ADMIN_ACCESS_CODE`    | Yes      | Admin login code                              |
-| `ADMIN_SESSION_SECRET` | Yes      | Session signing secret                        |
-| `MYBLOG_DB`            | CF only  | D1 database binding (set in `wrangler.jsonc`) |
+| Variable               | Required | Description                                       |
+| ---------------------- | -------- | ------------------------------------------------- |
+| `ADMIN_ACCESS_CODE`    | Yes      | Admin login code                                  |
+| `ADMIN_SESSION_SECRET` | Yes      | Session signing secret                            |
+| `MYBLOG_DB`            | CF only  | D1 database binding (set in `wrangler.jsonc`)     |
+| `NEXT_TAG_CACHE_D1`    | CF only  | D1 binding for ISR tag cache (same database)      |
+| `NEXT_INC_CACHE_KV`    | CF only  | KV namespace binding for ISR incremental cache    |

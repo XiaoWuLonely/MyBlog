@@ -1,15 +1,12 @@
-import path from "node:path";
 import { cache } from "react";
-import matter from "gray-matter";
-import { findContentFileBySlug, normalizeContentSlug } from "./content-slug.js";
-import { readCollectionItems, readContentBySlugWithD1Fallback, readContentCollectionMetaWithD1Fallback } from "./content.js";
+import { normalizeContentSlug } from "./content-slug.js";
+import { readContentBySlug, readContentCollectionMeta } from "./content.js";
 import {
   ALL_RESOURCES_CATEGORY,
   normalizeResourceFiltersWithCategories,
   type ResourceFilters,
   type ResourceItem,
 } from "./resources-shared.js";
-const RESOURCES_DIR = path.join(process.cwd(), "src", "content", "resources");
 
 function createResourceMonogram(title: string) {
   const parts = title
@@ -40,13 +37,8 @@ function normalizeResourceItem(resource: Partial<ResourceItem> & Pick<ResourceIt
 
 // React cache：同一请求内去重；元数据瘦身读取避免为列表页拉取全文。
 export const getAllResources = cache(async () => {
-  const items = await readContentCollectionMetaWithD1Fallback<ResourceItem>({
+  const items = await readContentCollectionMeta<ResourceItem>({
     category: "resource",
-    fallback: async () =>
-      (await readCollectionItems<ResourceItem>(RESOURCES_DIR)).map(({ meta, filePath }) => ({
-        meta,
-        filePath,
-      })),
   });
 
   return items
@@ -66,23 +58,9 @@ export async function getResourceBySlug(slug: string) {
 }
 
 export const getResourceDetailBySlug = cache(async (slug: string) => {
-  const item = await readContentBySlugWithD1Fallback<ResourceItem>({
+  const item = await readContentBySlug<ResourceItem>({
     category: "resource",
     slug,
-    fallback: async () => {
-      const match = await findContentFileBySlug(RESOURCES_DIR, slug);
-
-      if (!match) {
-        return null;
-      }
-
-      const { data, content } = matter(match.source);
-      return {
-        meta: data as ResourceItem,
-        content,
-        filePath: match.filePath,
-      };
-    },
   });
 
   if (!item) {

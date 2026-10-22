@@ -1,11 +1,7 @@
-import path from "node:path";
 import { cache } from "react";
-import matter from "gray-matter";
 import type { ProjectContentFrontmatter } from "./content-shared";
-import { findContentFileBySlug, normalizeContentSlug } from "./content-slug.js";
-import { readCollectionItems, readContentBySlugWithD1Fallback, readContentCollectionMetaWithD1Fallback } from "./content.js";
-
-const PROJECTS_DIR = path.join(process.cwd(), "src", "content", "projects");
+import { normalizeContentSlug } from "./content-slug.js";
+import { readContentBySlug, readContentCollectionMeta } from "./content.js";
 
 export type ProjectFrontmatter = ProjectContentFrontmatter;
 
@@ -29,13 +25,8 @@ function normalizeProjectItem(
 
 // React cache：同一请求内去重；元数据瘦身读取避免为列表页拉取全文。
 export const getAllProjects = cache(async () => {
-  const items = await readContentCollectionMetaWithD1Fallback<ProjectFrontmatter>({
+  const items = await readContentCollectionMeta<ProjectFrontmatter>({
     category: "project",
-    fallback: async () =>
-      (await readCollectionItems<ProjectFrontmatter>(PROJECTS_DIR)).map(({ meta, filePath }) => ({
-        meta,
-        filePath,
-      })),
   });
 
   return items
@@ -55,23 +46,9 @@ export async function getProjectBySlug(slug: string) {
 }
 
 export const getProjectDetailBySlug = cache(async (slug: string) => {
-  const item = await readContentBySlugWithD1Fallback<ProjectFrontmatter>({
+  const item = await readContentBySlug<ProjectFrontmatter>({
     category: "project",
     slug,
-    fallback: async () => {
-      const match = await findContentFileBySlug(PROJECTS_DIR, slug);
-
-      if (!match) {
-        return null;
-      }
-
-      const { data, content } = matter(match.source);
-      return {
-        meta: data as ProjectFrontmatter,
-        content,
-        filePath: match.filePath,
-      };
-    },
   });
 
   if (!item) {

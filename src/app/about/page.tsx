@@ -1,5 +1,6 @@
 import Image from "next/image";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Mail, MapPin, Milestone, Sparkles } from "lucide-react";
 import { Reveal } from "@/components/motion/reveal";
 import { ActionLink, GlassPanel, Pill, SoftPanel } from "@/components/site/ui";
@@ -13,6 +14,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AboutPage() {
+  // 近期项目来自云端 D1，构建期读不到，推迟到请求期渲染。
+  await connection();
   const projects = await getCachedAllProjects();
 
   return (

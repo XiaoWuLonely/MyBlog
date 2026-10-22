@@ -1,20 +1,19 @@
 # MyBlog
 
-A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
+A personal blog built with Next.js 16, Cloudflare D1 content storage, and Cloudflare Workers.
 
 **Live site:** [smartxb.syz](https://smartxb.syz)
 
 ## Features
 
 - Three content collections: archive posts, projects, and resources
-- MDX-based content with frontmatter metadata
+- Content stored in Cloudflare D1 as the single source of truth (no local MDX fallback)
 - Admin-gated editor for publishing and managing all content types
 - Visitor message board on the About page
 - Custom animated route transitions with Framer Motion
 - Light/dark theme with persistent toggle
 - URL-synced search and category filters on the archive page
 - Cloudflare D1 for content and visitor message persistence
-- Static content registry fallback for builds without filesystem access
 - ISR caching for public pages (KV incremental cache + D1 tag cache)
 - Bot/scanner request blocking at the proxy layer
 
@@ -38,7 +37,7 @@ A personal blog built with Next.js 16, MDX content, and Cloudflare Workers.
 - **Framework:** Next.js 16.2.3 (App Router, React 19, React Compiler)
 - **Styling:** Tailwind CSS 4
 - **Animation:** Framer Motion
-- **Content:** MDX via `@next/mdx` + `next-mdx-remote`
+- **Content:** Markdown/MDX bodies stored in Cloudflare D1, rendered with `next-mdx-remote`
 - **Deployment:** Cloudflare Workers via `@opennextjs/cloudflare`
 - **Database:** Cloudflare D1
 
@@ -75,10 +74,21 @@ npm run dev
 
 Open the URL printed by the command you run.
 
+### Local runtime capabilities
+
+| Runtime              | Public page reads (D1)                 | Editor / API route writes (D1)                                        | Use for                   |
+| -------------------- | -------------------------------------- | --------------------------------------------------------------------- | ------------------------- |
+| `npm run dev`        | Yes                                    | Not validated                                                         | UI work, route debugging  |
+| `npm run build`      | Yes (prerender passes)                 | —                                                                     | build validation          |
+| `npm start`          | Yes                                    | No — route handlers resolve no D1 binding and return 503              | page-rendering checks only |
+| `npm run cf:preview` | Yes                                    | Yes                                                                   | full local runtime        |
+
+`npm start` is not a valid way to test publishing: the Node.js preview runtime does not resolve the Cloudflare bindings for route handlers, so `/editor/api/posts` answers 503. Validate publishing and visitor messages through `npm run cf:preview` (or `npx wrangler dev`), where the Worker runtime provides the bindings.
+
 ## Commands
 
 ```powershell
-npm run dev          # Next.js dev server; Cloudflare D1 writes are unavailable
+npm run dev          # Next.js dev server; public pages read the remote D1 binding
 npm test             # Run tests (Node test runner)
 npm run typecheck    # TypeScript check (run sequentially, not in parallel)
 npm run build        # Production build
@@ -96,7 +106,7 @@ node --experimental-specifier-resolution=node --test --experimental-strip-types 
 
 ## Cloudflare Workers Deployment
 
-The site deploys to Cloudflare Workers. Public content is bundled into a static registry at build time so the Worker can serve pages without filesystem access. The editor publishes content directly to the configured Cloudflare D1 database.
+The site deploys to Cloudflare Workers. Public content is read from the `content_items` table in the configured Cloudflare D1 database at request time — there is no bundled filesystem or static-registry fallback. Pages that only read content (`/projects`, `/about`) call `connection()` so they render per request instead of being prerendered as empty lists at build time, while the data itself stays cached by `use cache`. The editor publishes content directly to the same D1 database.
 
 ### Setup
 
@@ -107,7 +117,11 @@ npx wrangler d1 create myblog
 # Apply schema
 npx wrangler d1 execute myblog --remote --file migrations/0001_d1_r2_content.sql
 
-# Export existing content to D1
+# Import content into D1
+# Optional: scripts/export-content-for-d1.mjs is a one-off migration helper that reads
+# src/content/{posts,projects,resources}. Those directories are empty in the current
+# repository, so the script only emits its header. Restore historical .mdx files there
+# first if you need to seed a fresh database.
 node scripts/export-content-for-d1.mjs | Out-File -FilePath .\d1-content-import.sql -Encoding utf8
 npx wrangler d1 execute myblog --remote --file .\d1-content-import.sql
 ```
@@ -156,6 +170,8 @@ The `wrangler.jsonc` contains the D1 database binding (`MYBLOG_DB`). Replace the
 ### Notes
 
 - Production builds use Webpack (`--webpack`) because the OpenNext adapter does not reliably load Next 16 Turbopack server chunks in the Worker runtime.
+- Content has no local file fallback: when D1 has no row for a slug, the page answers 404 instead of reading a `.mdx` file. Deleted rows keep a tombstone in `deleted_at` so removed content cannot reappear.
+- `/posts/[slug]`, `/projects/[slug]`, and `/resources/[slug]` keep a placeholder entry in `generateStaticParams` because Cache Components rejects empty results at build time; the placeholder slug resolves to `notFound()` and real slugs render on demand.
 - New file uploads (covers, attachments) are rejected on Cloudflare; publish text-only content for now.
 - Visitor messages are stored in the remote D1 database. If message submission fails with `no such table: messages`, run `migrations/0002_messages.sql` against the remote database.
 - Known bot/scanner paths (WordPress probes, `.env`, `.git`, etc.) are answered with a fast 404 in `src/proxy.ts` before they reach the Worker router, keeping them from consuming CPU time.

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import Image from "next/image";
 import { Boxes, Grid2x2, Sparkles, SquareStack } from "lucide-react";
 import { Suspense } from "react";
@@ -63,6 +64,9 @@ async function ProjectCardAdminActions({ slug }: { slug: string }) {
 }
 
 export default async function ProjectsPage() {
+  // 内容只存在云端 D1，构建期 worker 拿不到 binding，预渲染会固化成空列表；
+  // 用 connection() 把这一页推迟到请求期渲染（数据本身仍由 use cache 缓存 5 分钟）。
+  await connection();
   const projects = await getCachedAllProjects();
 
   return (

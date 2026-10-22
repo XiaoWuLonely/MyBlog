@@ -1,10 +1,6 @@
 import { revalidateTag } from "next/cache";
 import type { EditorCategory } from "@/lib/editor";
 
-export function editorContentRootDir() {
-  return `${process.cwd().replaceAll("\\", "/")}/src/content`;
-}
-
 const CATEGORY_CACHE_TAG: Record<EditorCategory, string> = {
   archive: "content:archive",
   project: "content:project",

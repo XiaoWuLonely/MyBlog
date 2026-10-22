@@ -155,14 +155,14 @@ Pages carry `stale-while-revalidate`, so once a cached page passes its `cacheLif
 
 Leaving `queue` at the default (`dummy`) makes every stale-page hit log `Failed to revalidate stale page <path>` and the page never refreshes until a tag revalidation happens.
 
-The Durable Object binding brings a pending migration, and **`wrangler versions upload` cannot apply Durable Object migrations**. If Workers Builds runs `npx wrangler versions upload` as the deploy command, the build succeeds and then fails with:
+The Durable Object binding brings a pending migration (`v1`). Workers Builds runs **two different commands**: the **Deploy command** (`npx wrangler deploy`, production branch only) and the **Preview command** (`npx wrangler versions upload` here, every non-production branch). Only `wrangler deploy` can apply Durable Object migrations, so a build on a feature/PR branch fails with:
 
 ```
 This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`.
 Durable Object migrations must be applied with `wrangler deploy`.
 ```
 
-Set the Workers Builds deploy command to `npx wrangler deploy` (or run `npx wrangler deploy` once locally to apply migration `v1`; afterwards `versions upload` works again for gradual rollouts). Verify with a dry run before deploying:
+This is expected on non-production branches, not a misconfiguration. Apply the migration once through the production branch build (merge the change) or by running `npx wrangler deploy` locally; after `v1` is applied, preview builds succeed again until a new migration tag is added. Verify with a dry run before deploying:
 
 ```powershell
 npx wrangler deploy --dry-run --outdir .open-next/dryrun

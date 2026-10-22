@@ -92,12 +92,23 @@ Executing user deploy command: npx wrangler versions upload
   Run `wrangler deploy` to apply the migration, then retry `wrangler versions upload`.
 ```
 
-原因：本修复引入了 `migrations` 段（`v1` / `new_sqlite_classes: ["DOQueueHandler"]`）。`versions upload` 只上传新版本、不做迁移，因此带 pending migration 时必然拒绝；`wrangler deploy` 才会应用迁移并创建 DO 类。
+**根因（初版判断错误，已修正）**：不是有人把 Deploy command 改成了 `versions upload`。Cloudflare Workers Builds 有两条彼此独立的命令：
 
-处理方式（不改代码，改部署命令）：
+| 命令 | 运行范围 | 本项目取值 |
+|---|---|---|
+| Deploy command | 仅生产分支 | `npx wrangler deploy`（用户确认从未改动） |
+| Preview command | 所有非生产分支 | `npx wrangler versions upload` |
 
-- Workers Builds 的 **Deploy command** 由 `npx wrangler versions upload` 改为 `npx wrangler deploy`；
-- 或本地执行一次 `npx wrangler deploy` 应用 `v1`，之后 `versions upload` 可继续用于灰度发布。
+来源：<https://developers.cloudflare.com/workers/ci-cd/builds/configuration/> —「Preview builds run for branches that are not your production branch」「If you change this command to `npx wrangler versions upload`, the build creates a Worker version and Version URL」。
+
+本次构建的分支是 `fix/isr-revalidation-queue`（非生产分支），因此执行的是 Preview command，而不是 Deploy command。而 `versions upload` 只上传版本、不应用 DO 迁移，所以**任何带 pending migration 的功能分支构建都必然失败**，与配置是否正确无关。
+
+处理方式（不改代码、也不改任何面板配置）：
+
+- **合并本 PR 到生产分支**，由生产分支的 Deploy command（`npx wrangler deploy`）应用 `v1` 并创建 `DOQueueHandler`；
+- 或先在本地 `npx wrangler deploy` 跑一次应用 `v1`，线上立刻恢复，随后 PR 预览构建也会重新变绿。
+
+`v1` 应用后，后续功能分支的 `versions upload` 预览构建恢复正常，除非再新增 migration tag。
 
 同时确认构建日志里那段警告是良性的：
 
@@ -116,9 +127,11 @@ export { DOQueueHandler } from "./.build/durable-objects/queue.js";
 
 | 指标 | 修复前（本次部署） | 修复后 |
 |---|---|---|
-| 部署结果 | build 成功、upload 失败（exit 1） | `wrangler deploy` 应用迁移后完成 |
+| 部署结果 | build 成功、preview 阶段失败（exit 1） | 生产分支 deploy 应用迁移后完成 |
 | 线上 DO 类 | 未创建，队列不可用 | `DOQueueHandler` 已创建 |
 | stale 页面重校验 | 仍不生效 | 生效 |
+| 功能分支预览构建 | 带 pending migration 时必然失败 | `v1` 落地后恢复正常 |
+
 
 ## 八、流程事故记录
 

@@ -155,6 +155,21 @@ Pages carry `stale-while-revalidate`, so once a cached page passes its `cacheLif
 
 Leaving `queue` at the default (`dummy`) makes every stale-page hit log `Failed to revalidate stale page <path>` and the page never refreshes until a tag revalidation happens.
 
+The Durable Object binding brings a pending migration, and **`wrangler versions upload` cannot apply Durable Object migrations**. If Workers Builds runs `npx wrangler versions upload` as the deploy command, the build succeeds and then fails with:
+
+```
+This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`.
+Durable Object migrations must be applied with `wrangler deploy`.
+```
+
+Set the Workers Builds deploy command to `npx wrangler deploy` (or run `npx wrangler deploy` once locally to apply migration `v1`; afterwards `versions upload` works again for gradual rollouts). Verify with a dry run before deploying:
+
+```powershell
+npx wrangler deploy --dry-run --outdir .open-next/dryrun
+```
+
+The dry run must list `env.NEXT_CACHE_DO_QUEUE (DOQueueHandler) Durable Object` and `env.WORKER_SELF_REFERENCE (wulongblog) Worker`.
+
 Check the remote tables:
 
 ```powershell

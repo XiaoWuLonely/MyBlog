@@ -77,11 +77,50 @@ export default {
 
 ## 六、遗留项与风险
 
-- **必须在 Cloudflare 面板确认两个绑定存在**：`NEXT_CACHE_DO_QUEUE`（Durable Object）与 `WORKER_SELF_REFERENCE`（Service）。任一缺失会退回无绑定状态，日志会重新出现。首次部署会自动应用 `v1` 迁移并创建 DO 类。
+- **必须在 Cloudflare 面板确认两个绑定存在**：`NEXT_CACHE_DO_QUEUE`（Durable Object）与 `WORKER_SELF_REFERENCE`（Service）。任一缺失会退回无绑定状态，日志会重新出现。`v1` 迁移只有在 `wrangler deploy` 时才会应用（见第七节），`versions upload` 不会创建 DO 类。
 - `WORKER_SELF_REFERENCE.service` 与 `wrangler.jsonc` 的 `name` 强耦合，改名 Worker 时必须同步修改。
 - 若未来改用 Cloudflare Queues 产品替代 DO（高并发写入场景才需要），需同时调整 `queue` 配置与 `wrangler.jsonc` 的 `queues` 段，并把 `consumers` 指向本 Worker。
 
-## 七、流程事故记录
+## 七、部署阶段暴露的新问题
+
+首次部署（Workers Builds）在 build 成功后失败：
+
+```
+Executing user deploy command: npx wrangler versions upload
+✘ [ERROR] This Worker has a pending Durable Object migration, which cannot be applied by
+  `wrangler versions upload`. Durable Object migrations must be applied with `wrangler deploy`.
+  Run `wrangler deploy` to apply the migration, then retry `wrangler versions upload`.
+```
+
+原因：本修复引入了 `migrations` 段（`v1` / `new_sqlite_classes: ["DOQueueHandler"]`）。`versions upload` 只上传新版本、不做迁移，因此带 pending migration 时必然拒绝；`wrangler deploy` 才会应用迁移并创建 DO 类。
+
+处理方式（不改代码，改部署命令）：
+
+- Workers Builds 的 **Deploy command** 由 `npx wrangler versions upload` 改为 `npx wrangler deploy`；
+- 或本地执行一次 `npx wrangler deploy` 应用 `v1`，之后 `versions upload` 可继续用于灰度发布。
+
+同时确认构建日志里那段警告是良性的：
+
+```
+A DurableObjectNamespace in the config referenced the class "DOQueueHandler",
+but no such Durable Object class is exported from the worker.
+```
+
+它出现在 `next build` 阶段（此时 `.open-next/worker.js` 尚未生成，wrangler 读的是占位入口）。打包完成后 `.open-next/worker.js` 第 10 行确实导出：
+
+```js
+export { DOQueueHandler } from "./.build/durable-objects/queue.js";
+```
+
+`npx wrangler deploy --dry-run` 也确认全部绑定解析成功：`NEXT_CACHE_DO_QUEUE (DOQueueHandler) Durable Object`、`WORKER_SELF_REFERENCE (wulongblog) Worker`、`NEXT_INC_CACHE_KV`、`MYBLOG_DB`、`NEXT_TAG_CACHE_D1`。
+
+| 指标 | 修复前（本次部署） | 修复后 |
+|---|---|---|
+| 部署结果 | build 成功、upload 失败（exit 1） | `wrangler deploy` 应用迁移后完成 |
+| 线上 DO 类 | 未创建，队列不可用 | `DOQueueHandler` 已创建 |
+| stale 页面重校验 | 仍不生效 | 生效 |
+
+## 八、流程事故记录
 
 本次修复的第一版被错误地直接提交到了 `main`（提交 `9eefdae`，未推送）。已通过 `git reset HEAD~1`（mixed reset，保留工作区改动）撤回，`main` 回到 `7fb6635`（即 `origin/main`），改动整体迁移到本分支 `fix/isr-revalidation-queue` 重新提交。
 

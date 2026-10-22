@@ -12,8 +12,8 @@ import {
   saveD1Message,
 } from "./cloudflare-content-store.ts";
 import {
-  readContentBySlugWithD1Fallback,
-  readContentCollectionWithD1Fallback,
+  readContentBySlug,
+  readContentCollection,
 } from "./content.ts";
 import { validateCloudflareAssetUploads } from "./cloudflare-content-store.ts";
 
@@ -402,195 +402,7 @@ test("D1 message store creates, lists, marks read, and deletes messages", async 
   );
 });
 
-test("content readers prefer D1 when rows exist and fall back when D1 is empty", async () => {
-  const db = createFakeD1();
-
-  const emptyItems = await readContentCollectionWithD1Fallback({
-    db,
-    category: "archive",
-    fallback: async () => [
-      {
-        meta: {
-          title: "Fallback Note",
-          slug: "fallback-note",
-          summary: "Bundled content",
-          date: "2026-04-19",
-          category: "Fallback",
-          tags: [],
-          featured: false,
-          assetNames: [],
-        },
-        content: "# Fallback Note",
-        filePath: "fallback.mdx",
-      },
-    ],
-  });
-
-  assert.equal(emptyItems[0].meta.slug, "fallback-note");
-
-  await saveD1Content({
-    db,
-    payload: createDraft(),
-    now: () => "2026-04-21T10:00:00.000Z",
-  });
-
-  const d1Items = await readContentCollectionWithD1Fallback({
-    db,
-    category: "archive",
-    fallback: async () => [],
-  });
-
-  assert.equal(d1Items[0].meta.slug, "d1-note");
-
-  const detail = await readContentBySlugWithD1Fallback({
-    db,
-    category: "archive",
-    slug: "d1-note",
-    fallback: async () => {
-      throw new Error("fallback should not be used for existing D1 detail");
-    },
-  });
-
-  assert.equal(detail?.meta.slug, "d1-note");
-
-  const fallbackDetail = await readContentBySlugWithD1Fallback({
-    db,
-    category: "archive",
-    slug: "missing-note",
-    fallback: async () => ({
-      meta: {
-        title: "Fallback Detail",
-        slug: "missing-note",
-        summary: "Bundled detail",
-        date: "2026-04-19",
-        category: "Fallback",
-        tags: [],
-        featured: false,
-        assetNames: [],
-      },
-      content: "# Fallback Detail",
-      filePath: "missing-note.mdx",
-    }),
-  });
-
-  assert.equal(fallbackDetail?.meta.title, "Fallback Detail");
-});
-
-test("D1 is the source of truth when content exists, skipping static fallback", async () => {
-  const db = createFakeD1();
-
-  await saveD1Content({
-    db,
-    payload: createDraft({
-      title: "Updated Bundled Note",
-      slug: "bundled-note",
-      content: "# Updated Bundled Note",
-    }),
-    now: () => "2026-04-21T10:00:00.000Z",
-  });
-  await deleteD1Content({
-    db,
-    source: {
-      originalCategory: "archive",
-      originalSlug: "deleted-bundled-note",
-    },
-    now: () => "2026-04-22T10:00:00.000Z",
-  });
-
-  let fallbackCalled = false;
-
-  const items = await readContentCollectionWithD1Fallback({
-    db,
-    category: "archive",
-    fallback: async () => {
-      fallbackCalled = true;
-      return [
-        {
-          meta: {
-            title: "Bundled Note",
-            slug: "bundled-note",
-            summary: "Original bundled content",
-            date: "2026-04-19",
-            category: "Fallback",
-            tags: [],
-            featured: false,
-            assetNames: [],
-          },
-          content: "# Bundled Note",
-          filePath: "bundled-note.mdx",
-        },
-      ];
-    },
-  });
-
-  assert.equal(fallbackCalled, false);
-  assert.deepEqual(
-    items.map((item) => item.meta.slug),
-    ["bundled-note"],
-  );
-  assert.equal(items[0].meta.title, "Updated Bundled Note");
-});
-
-test("collection readers fetch D1 row state once while merging fallback content", async () => {
-  const db = createFakeD1();
-
-  await saveD1Content({
-    db,
-    payload: createDraft({
-      title: "Updated Bundled Note",
-      slug: "bundled-note",
-      content: "# Updated Bundled Note",
-    }),
-    now: () => "2026-04-21T10:00:00.000Z",
-  });
-
-  db.queryLog.length = 0;
-
-  await readContentCollectionWithD1Fallback({
-    db,
-    category: "archive",
-    fallback: async () => [
-      {
-        meta: {
-          title: "Bundled Note",
-          slug: "bundled-note",
-          summary: "Original bundled content",
-          date: "2026-04-19",
-          category: "Fallback",
-          tags: [],
-          featured: false,
-          assetNames: [],
-        },
-        content: "# Bundled Note",
-        filePath: "bundled-note.mdx",
-      },
-      {
-        meta: {
-          title: "Untouched Bundled Note",
-          slug: "untouched-bundled-note",
-          summary: "Still visible",
-          date: "2026-04-18",
-          category: "Fallback",
-          tags: [],
-          featured: false,
-          assetNames: [],
-        },
-        content: "# Untouched Bundled Note",
-        filePath: "untouched-bundled-note.mdx",
-      },
-    ],
-  });
-
-  const contentQueries = db.queryLog.filter((sql) => sql.includes("FROM content_items"));
-
-  assert.equal(contentQueries.length, 1);
-  assert.equal(
-    contentQueries.some((sql) => sql.includes("frontmatter_json")),
-    true,
-  );
-});
-
-test("content readers do not fall back to bundled content after a D1 delete tombstone", async () => {
+test("content readers do not fall back after a D1 delete tombstone", async () => {
   const db = createFakeD1();
 
   await saveD1Content({
@@ -607,88 +419,20 @@ test("content readers do not fall back to bundled content after a D1 delete tomb
     now: () => "2026-04-22T10:00:00.000Z",
   });
 
-  const detail = await readContentBySlugWithD1Fallback({
+  const detail = await readContentBySlug({
     db,
     category: "archive",
     slug: "d1-note",
-    fallback: async () => ({
-      meta: {
-        title: "Bundled D1 Note",
-        slug: "d1-note",
-        summary: "This should stay hidden after D1 delete.",
-        date: "2026-04-19",
-        category: "Fallback",
-        tags: [],
-        featured: false,
-        assetNames: [],
-      },
-      content: "# Bundled D1 Note",
-      filePath: "d1-note.mdx",
-    }),
   });
 
   assert.equal(detail, null);
 
-  const items = await readContentCollectionWithD1Fallback({
+  const items = await readContentCollection({
     db,
     category: "archive",
-    fallback: async () => [
-      {
-        meta: {
-          title: "Bundled D1 Note",
-          slug: "d1-note",
-          summary: "This should stay hidden after D1 delete.",
-          date: "2026-04-19",
-          category: "Fallback",
-          tags: [],
-          featured: false,
-          assetNames: [],
-        },
-        content: "# Bundled D1 Note",
-        filePath: "d1-note.mdx",
-      },
-    ],
   });
 
   assert.deepEqual(items, []);
-});
-
-test("D1 delete creates a tombstone when bundled fallback content was never imported", async () => {
-  const db = createFakeD1();
-
-  const deleted = await deleteD1Content({
-    db,
-    source: {
-      originalCategory: "archive",
-      originalSlug: "bundled-only-note",
-    },
-    now: () => "2026-04-22T10:00:00.000Z",
-  });
-
-  assert.equal(deleted.ok, true);
-  assert.equal(deleted.createdTombstone, true);
-
-  const detail = await readContentBySlugWithD1Fallback({
-    db,
-    category: "archive",
-    slug: "bundled-only-note",
-    fallback: async () => ({
-      meta: {
-        title: "Bundled Only Note",
-        slug: "bundled-only-note",
-        summary: "This should stay hidden after a D1 tombstone.",
-        date: "2026-04-19",
-        category: "Fallback",
-        tags: [],
-        featured: false,
-        assetNames: [],
-      },
-      content: "# Bundled Only Note",
-      filePath: "bundled-only-note.mdx",
-    }),
-  });
-
-  assert.equal(detail, null);
 });
 
 test("Cloudflare publishing rejects new uploaded assets", () => {

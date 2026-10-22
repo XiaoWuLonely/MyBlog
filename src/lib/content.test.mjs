@@ -1,8 +1,4 @@
 import assert from "node:assert/strict";
-import os from "node:os";
-import path from "node:path";
-import fs from "node:fs/promises";
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import test from "node:test";
 import tsconfig from "../../tsconfig.json" with { type: "json" };
 import {
@@ -13,13 +9,8 @@ import {
   createContentFileBody,
   createEditorWritePayload,
   createPersistedEditorDraft,
-  deleteEditorContentFile,
   getContentDirectoryForCategory,
-  getPersistedEditorDraftBySource,
-  parseContentCollectionItem,
   resolvePublishDate,
-  updateEditorContentFile,
-  validateEditorWriteTarget,
 } from "./content.ts";
 
 test("getContentDirectoryForCategory resolves editor categories to content folders", () => {
@@ -213,27 +204,6 @@ test("createContentFileBody builds frontmatter plus markdown body", () => {
   assert.match(source, /\n# Demo\n\nBody\n$/);
 });
 
-test("validateEditorWriteTarget rejects duplicate slugs in the target directory", async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-content-"));
-  const postsDir = path.join(tmpRoot, "posts");
-  await mkdir(postsDir, { recursive: true });
-  await writeFile(path.join(postsDir, "existing-note.mdx"), "# Existing", "utf8");
-
-  const result = await validateEditorWriteTarget({
-    rootDir: tmpRoot,
-    category: "archive",
-    slug: "existing-note",
-  });
-
-  assert.equal(result.ok, false);
-  if (result.ok) {
-    return;
-  }
-  assert.deepEqual(result.errors, {
-    slug: "当前 slug 已存在对应内容文件。",
-  });
-});
-
 test("buildEditorWriteResult returns path metadata and persisted compose payload", () => {
   const payload = createEditorWritePayload({
     title: "New Resource",
@@ -271,7 +241,7 @@ test("buildEditorWriteResult returns path metadata and persisted compose payload
 
   assert.deepEqual(result, {
     ok: true,
-    message: "内容已写入资源目录。",
+    message: "内容已写入资源。",
     slug: "new-resource",
     category: "resource",
     outputPath: "src/content/resources/new-resource.mdx",
@@ -291,77 +261,6 @@ test("buildEditorWriteResult returns path metadata and persisted compose payload
       originalSlug: "new-resource",
     },
   });
-});
-
-test("parseContentCollectionItem reads frontmatter and preserves body text", async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-content-"));
-  const sourceDir = path.join(tmpRoot, "resources");
-  await mkdir(sourceDir, { recursive: true });
-  const filePath = path.join(sourceDir, "quiet-library.mdx");
-  await writeFile(
-    filePath,
-    `---
-title: "Quiet Library"
-slug: "quiet-library"
-summary: "Collected references"
-date: "2026-04-09"
-category: "参考"
-tags:
-  - Reading
-cover: "/visuals/card.svg"
-featured: true
----
-
-# Quiet Library
-
-Body copy.
-`,
-    "utf8",
-  );
-
-  const item = await parseContentCollectionItem(filePath);
-
-  assert.equal(item.meta.slug, "quiet-library");
-  assert.equal(item.meta.title, "Quiet Library");
-  assert.equal(item.meta.summary, "Collected references");
-  assert.equal(item.meta.cover, "/visuals/card.svg");
-  assert.match(item.content, /# Quiet Library/);
-});
-
-test("parseContentCollectionItem preserves legacy content even when assetNames is omitted", async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-content-"));
-  const sourceDir = path.join(tmpRoot, "projects");
-  await mkdir(sourceDir, { recursive: true });
-  const filePath = path.join(sourceDir, "legacy-project.mdx");
-  await writeFile(
-    filePath,
-    `---
-title: "Legacy Project"
-slug: "legacy-project"
-summary: "Collected references"
-date: "2026-04-09"
-category: "椤圭洰"
-tags:
-  - Reading
-featured: false
-year: "2026"
-stack:
-  - Reading
-icon: "grid"
-accent: "primary"
----
-
-# Legacy Project
-
-Body copy.
-`,
-    "utf8",
-  );
-
-  const item = await parseContentCollectionItem(filePath);
-
-  assert.equal(item.meta.slug, "legacy-project");
-  assert.equal(item.meta.assetNames, undefined);
 });
 
 test("createPersistedEditorDraft maps persisted file metadata back to compose state", () => {
@@ -480,284 +379,7 @@ test("createPersistedEditorDraft restores project and resource meta fields from 
   });
 });
 
-test("updateEditorContentFile overwrites the original file when source matches slug and category", async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-update-"));
-  const postsDir = path.join(tmpRoot, "posts");
-  await mkdir(postsDir, { recursive: true });
-
-  const filePath = path.join(postsDir, "draft-note.mdx");
-  await writeFile(
-    filePath,
-    `---
-title: "Draft Note"
-slug: "draft-note"
-summary: "Initial summary"
-date: "2026-04-09"
-category: "归档"
-tags:
-  - Notes
-featured: false
-assetNames: []
----
-
-# Draft Note
-
-First version.
-`,
-    "utf8",
-  );
-
-  const before = await stat(filePath);
-
-  await updateEditorContentFile({
-    rootDir: tmpRoot,
-    payload: createEditorWritePayload({
-      title: "Draft Note Updated",
-      slug: "draft-note",
-      summary: "Updated summary",
-      content: "# Draft Note Updated\n\nSecond version.",
-      category: "archive",
-      tags: ["Notes", "Update"],
-      scheduleAt: null,
-      projectMeta: {
-        href: "",
-        github: "",
-        docs: "",
-        year: "",
-        stack: [],
-        icon: "grid",
-        accent: "primary",
-      },
-      resourceMeta: {
-        url: "",
-        rating: 4,
-        monogram: "",
-        accent: "primary",
-      },
-      archiveMeta: {},
-      cover: null,
-      assets: [],
-      source: {
-        originalCategory: "archive",
-        originalSlug: "draft-note",
-      },
-    }),
-    now: () => "2026-04-12T12:00:00.000Z",
-  });
-
-  const after = await stat(filePath);
-  const persisted = await readFile(filePath, "utf8");
-
-  assert.ok(after.mtimeMs >= before.mtimeMs);
-  assert.match(persisted, /title: Draft Note Updated/);
-  assert.doesNotMatch(persisted, /^draft:/m);
-  assert.doesNotMatch(persisted, /^hidden:/m);
-  assert.match(persisted, /Second version\./);
-});
-
-test("updateEditorContentFile migrates files when category or slug changes", async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-move-"));
-  const postsDir = path.join(tmpRoot, "posts");
-  const resourcesDir = path.join(tmpRoot, "resources");
-  await mkdir(postsDir, { recursive: true });
-  await mkdir(resourcesDir, { recursive: true });
-
-  await writeFile(
-    path.join(postsDir, "draft-note.mdx"),
-    `---
-title: "Draft Note"
-slug: "draft-note"
-summary: "Initial summary"
-date: "2026-04-09"
-category: "归档"
-tags:
-  - Notes
-featured: false
-assetNames: []
----
-
-# Draft Note
-`,
-    "utf8",
-  );
-
-  const result = await updateEditorContentFile({
-    rootDir: tmpRoot,
-    payload: createEditorWritePayload({
-      title: "Resource Draft",
-      slug: "resource-draft",
-      summary: "Moved summary",
-      content: "# Resource Draft",
-      category: "resource",
-      tags: ["Library"],
-      scheduleAt: null,
-      projectMeta: {
-        href: "",
-        github: "",
-        docs: "",
-        year: "",
-        stack: [],
-        icon: "grid",
-        accent: "primary",
-      },
-      resourceMeta: {
-        url: "https://example.com/resource-draft",
-        rating: 4,
-        monogram: "RD",
-        accent: "primary",
-      },
-      archiveMeta: {},
-      cover: null,
-      assets: [],
-      source: {
-        originalCategory: "archive",
-        originalSlug: "draft-note",
-      },
-    }),
-    now: () => "2026-04-12T12:00:00.000Z",
-  });
-
-  assert.equal(result.ok, true);
-  if (!result.ok) {
-    return;
-  }
-
-  await assert.rejects(readFile(path.join(postsDir, "draft-note.mdx"), "utf8"));
-  const moved = await readFile(path.join(resourcesDir, "resource-draft.mdx"), "utf8");
-  assert.match(moved, /title: Resource Draft/);
-  assert.match(moved, /category: 资源/);
-  assert.doesNotMatch(moved, /^draft:/m);
-  assert.doesNotMatch(moved, /^hidden:/m);
-  assert.deepEqual(result.source, {
-    originalCategory: "resource",
-    originalSlug: "resource-draft",
-  });
-});
-
-test("updateEditorContentFile persists cover and assets into public uploads and returns persisted draft paths", async () => {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), "myblog-assets-"));
-
-  const result = await updateEditorContentFile({
-    rootDir,
-    payload: createEditorWritePayload({
-      title: "Asset Rich Resource",
-      slug: "asset-rich-resource",
-      summary: "Summary",
-      content: "# Asset Rich Resource\n\nBody",
-      category: "resource",
-      tags: ["Assets"],
-      scheduleAt: null,
-      projectMeta: {
-        href: "",
-        github: "",
-        docs: "",
-        year: "",
-        stack: [],
-        icon: "grid",
-        accent: "primary",
-      },
-      resourceMeta: {
-        url: "https://example.com/assets",
-        rating: 5,
-        monogram: "AR",
-        accent: "tertiary",
-      },
-      archiveMeta: {},
-      cover: {
-        name: "cover.webp",
-        type: "image/webp",
-        size: 4,
-        previewUrl: "blob:cover",
-        persistedPath: null,
-      },
-      assets: [
-        {
-          id: "asset-1",
-          name: "diagram.png",
-          type: "image/png",
-          size: 4,
-          previewUrl: "blob:diagram",
-          persistedPath: null,
-        },
-        {
-          id: "asset-2",
-          name: "brief.pdf",
-          type: "application/pdf",
-          size: 4,
-          previewUrl: null,
-          persistedPath: null,
-        },
-      ],
-    }),
-    coverUpload: {
-      name: "cover.webp",
-      type: "image/webp",
-      size: 4,
-      buffer: new Uint8Array([1, 2, 3, 4]),
-    },
-    assetUploads: [
-      {
-        name: "diagram.png",
-        type: "image/png",
-        size: 4,
-        buffer: new Uint8Array([5, 6, 7, 8]),
-      },
-      {
-        name: "brief.pdf",
-        type: "application/pdf",
-        size: 4,
-        buffer: new Uint8Array([9, 10, 11, 12]),
-      },
-    ],
-    now: () => "2026-04-12T12:00:00.000Z",
-  });
-
-  assert.equal(result.ok, true);
-  if (!result.ok) {
-    return;
-  }
-
-  const persisted = await readFile(path.join(rootDir, "resources", "asset-rich-resource.mdx"), "utf8");
-  assert.match(persisted, /cover: \/uploads\/resources\/asset-rich-resource\/cover\.webp/);
-  assert.match(persisted, /assetNames:/);
-  assert.match(persisted, /- diagram\.png/);
-  assert.match(persisted, /assetPaths:/);
-  assert.match(persisted, /- \/uploads\/resources\/asset-rich-resource\/assets\/diagram\.png/);
-  assert.match(persisted, /- \/uploads\/resources\/asset-rich-resource\/assets\/brief\.pdf/);
-  assert.equal(result.draft.cover?.persistedPath, "/uploads/resources/asset-rich-resource/cover.webp");
-  assert.deepEqual(
-    result.draft.assets.map((asset) => ({
-      name: asset.name,
-      persistedPath: asset.persistedPath,
-    })),
-    [
-      {
-        name: "diagram.png",
-        persistedPath: "/uploads/resources/asset-rich-resource/assets/diagram.png",
-      },
-      {
-        name: "brief.pdf",
-        persistedPath: "/uploads/resources/asset-rich-resource/assets/brief.pdf",
-      },
-    ],
-  );
-
-  const coverFile = await readFile(
-    path.join(process.cwd(), "public", "uploads", "resources", "asset-rich-resource", "cover.webp"),
-  );
-  const assetFile = await readFile(
-    path.join(process.cwd(), "public", "uploads", "resources", "asset-rich-resource", "assets", "diagram.png"),
-  );
-  assert.equal(coverFile.length, 4);
-  assert.equal(assetFile.length, 4);
-
-  await fs.rm(path.join(process.cwd(), "public", "uploads", "resources", "asset-rich-resource"), {
-    recursive: true,
-    force: true,
-  });
-});
-
-test("buildContentFileSource produces a serializable write payload", async () => {
+test("buildContentFileSource produces a serializable write payload", () => {
   const payload = createEditorWritePayload({
     title: "Project Log",
     slug: "project-log",
@@ -787,15 +409,11 @@ test("buildContentFileSource produces a serializable write payload", async () =>
   });
 
   const source = buildContentFileSource(payload);
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-content-"));
-  const outputPath = path.join(tempRoot, "project-log.mdx");
-  await writeFile(outputPath, source, "utf8");
-  const persisted = await readFile(outputPath, "utf8");
 
-  assert.match(persisted, /category: 项目/);
-  assert.doesNotMatch(persisted, /^draft:/m);
-  assert.doesNotMatch(persisted, /^hidden:/m);
-  assert.match(persisted, /# Project Log/);
+  assert.match(source, /category: 项目/);
+  assert.doesNotMatch(source, /^draft:/m);
+  assert.doesNotMatch(source, /^hidden:/m);
+  assert.match(source, /# Project Log/);
 });
 
 test("resolvePublishDate falls back to today when schedule is absent", () => {
@@ -938,88 +556,4 @@ test("createPersistedEditorDraft restores featured and topic fields from persist
 
   assert.equal(resourceResult.draft.featured, true);
   assert.equal(resourceResult.draft.resourceMeta.topic, "Animation");
-});
-
-test("getPersistedEditorDraftBySource loads persisted content into editor state", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-load-existing-"));
-  const resourcesDir = path.join(tempRoot, "resources");
-  await mkdir(resourcesDir, { recursive: true });
-  await writeFile(
-    path.join(resourcesDir, "framer-motion.mdx"),
-    `---
-title: "Framer Motion"
-slug: "framer-motion"
-summary: "Motion toolkit"
-date: "2026-04-09"
-category: "Animation"
-tags:
-  - Motion
-featured: true
-url: "https://www.framer.com/motion/"
-rating: 5
-accent: "primary"
-monogram: "FM"
----
-
-# Framer Motion
-
-Body copy.
-`,
-    "utf8",
-  );
-
-  const result = await getPersistedEditorDraftBySource({
-    rootDir: tempRoot,
-    category: "resource",
-    slug: "framer-motion",
-  });
-
-  assert.equal(result?.draft.title, "Framer Motion");
-  assert.equal(result?.draft.featured, true);
-  assert.equal(result?.draft.resourceMeta.topic, "Animation");
-  assert.deepEqual(result?.source, {
-    originalCategory: "resource",
-    originalSlug: "framer-motion",
-  });
-});
-
-test("deleteEditorContentFile removes the content file and matching uploads directory", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "myblog-delete-existing-"));
-  const postsDir = path.join(tempRoot, "posts");
-  await mkdir(postsDir, { recursive: true });
-  const postPath = path.join(postsDir, "draft-note.mdx");
-  await writeFile(
-    postPath,
-    `---
-title: "Draft Note"
-slug: "draft-note"
-summary: "Initial summary"
-date: "2026-04-09"
-category: "Design Notes"
-tags:
-  - Notes
-featured: false
-assetNames: []
----
-
-# Draft Note
-`,
-    "utf8",
-  );
-
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "posts", "draft-note", "assets");
-  await mkdir(uploadDir, { recursive: true });
-  await writeFile(path.join(uploadDir, "diagram.txt"), "demo", "utf8");
-
-  const result = await deleteEditorContentFile({
-    rootDir: tempRoot,
-    source: {
-      originalCategory: "archive",
-      originalSlug: "draft-note",
-    },
-  });
-
-  assert.equal(result.ok, true);
-  await assert.rejects(readFile(postPath, "utf8"));
-  await assert.rejects(stat(path.join(uploadDir, "diagram.txt")));
 });

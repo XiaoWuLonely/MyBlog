@@ -37,6 +37,30 @@
   "vars": {
     "MYBLOG_FILE_STORAGE": "readonly",
   },
+  "services": [
+    {
+      // ISR 后台重校验要回打自己：doQueue 用这个服务绑定对自身发 HEAD 请求。
+      // service 必须与上面的 worker name 一致。
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "wulongblog",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        // ISR 重校验队列；DOQueueHandler 由 .open-next/worker.js 导出。
+        "name": "NEXT_CACHE_DO_QUEUE",
+        "class_name": "DOQueueHandler",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      // DOQueueHandler 用 ctx.storage.sql，必须声明为 SQLite 后端类。
+      "tag": "v1",
+      "new_sqlite_classes": ["DOQueueHandler"],
+    },
+  ],
   "observability": {
     "enabled": true,
   },

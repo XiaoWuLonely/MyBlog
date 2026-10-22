@@ -16,7 +16,6 @@ import {
   prepareEditorSubmitPayload,
 } from "./editor.js";
 import type { EditorWriteResult } from "./publish-shared";
-import { readStaticContentCollection } from "./static-content.js";
 import { getD1Binding, type D1DatabaseBinding } from "./cloudflare-bindings.js";
 import {
   getD1ContentBySlug,
@@ -234,13 +233,14 @@ export function parseContentCollectionSource<T extends BaseContentFrontmatter = 
   } satisfies ContentCollectionItem<T>;
 }
 
+// 仅供编辑器写本地链路使用（Commit 6 会一起删除）。
 export async function readCollectionItems<T extends BaseContentFrontmatter = BaseContentFrontmatter>(
   directory: string,
 ) {
   const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
 
   if (entries.length === 0) {
-    return readStaticContentCollection<T>(directory);
+    return [];
   }
 
   const files = entries
@@ -252,55 +252,42 @@ export async function readCollectionItems<T extends BaseContentFrontmatter = Bas
   return items.sort((a, b) => +new Date(b.meta.date) - +new Date(a.meta.date));
 }
 
-export async function readContentCollectionWithD1Fallback<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
+export async function readContentCollection<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
   db = getD1Binding(),
   category,
-  fallback,
 }: {
   db?: D1DatabaseBinding | null;
   category: EditorCategory;
-  fallback: () => Promise<ContentCollectionItem<T>[]>;
 }) {
-  if (db) {
-    const { items: d1Items, deletedSlugs } = await listAllD1Content<T>(db, category);
-
-    if (d1Items.length === 0 && deletedSlugs.size === 0) {
-      return fallback();
-    }
-
-    return d1Items;
+  if (!db) {
+    return [];
   }
 
-  return fallback();
+  const { items, deletedSlugs } = await listAllD1Content<T>(db, category);
+  // deletedSlugs 由上层墓碑读场景处理（readContentBySlug），集合读取直接过滤掉墓碑对应的 slug。
+  return items.filter((item) => !deletedSlugs.has(normalizeContentSlug(item.meta.slug)));
 }
 
 // 元数据瘦身版集合读取：公开列表页专用。
 // 仅在未显式传 db（生产默认 binding）时启用 isolate 级 60s TTL 缓存；
 // 测试与编辑器链路显式传 db，绕过缓存保证实时性。
-export async function readContentCollectionMetaWithD1Fallback<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
+export async function readContentCollectionMeta<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
   db,
   category,
-  fallback,
 }: {
   db?: D1DatabaseBinding | null;
   category: EditorCategory;
-  fallback: () => Promise<ContentCollectionMeta<T>[]>;
 }) {
   const useIsolateCache = db === undefined;
   const resolvedDb = useIsolateCache ? getD1Binding() : db;
 
   const load = async (): Promise<ContentCollectionMeta<T>[]> => {
-    if (resolvedDb) {
-      const { items: d1Items, deletedSlugs } = await listAllD1ContentMeta<T>(resolvedDb, category);
-
-      if (d1Items.length === 0 && deletedSlugs.size === 0) {
-        return fallback();
-      }
-
-      return d1Items;
+    if (!resolvedDb) {
+      return [];
     }
 
-    return fallback();
+    const { items, deletedSlugs } = await listAllD1ContentMeta<T>(resolvedDb, category);
+    return items.filter((item) => !deletedSlugs.has(normalizeContentSlug(item.meta.slug)));
   };
 
   return useIsolateCache && resolvedDb
@@ -308,34 +295,35 @@ export async function readContentCollectionMetaWithD1Fallback<T extends BaseCont
     : load();
 }
 
-export async function readContentBySlugWithD1Fallback<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
+export async function readContentBySlug<T extends BaseContentFrontmatter = BaseContentFrontmatter>({
   db,
   category,
   slug,
-  fallback,
 }: {
   db?: D1DatabaseBinding | null;
   category: EditorCategory;
   slug: string;
-  fallback: () => Promise<ContentCollectionItem<T> | null>;
 }) {
   const useIsolateCache = db === undefined;
   const resolvedDb = useIsolateCache ? getD1Binding() : db;
 
   const load = async (): Promise<ContentCollectionItem<T> | null> => {
-    if (resolvedDb) {
-      const item = await getD1ContentBySlug<T>(resolvedDb, category, slug);
-
-      if (item) {
-        return item;
-      }
-
-      if (await hasD1ContentRow(resolvedDb, category, slug)) {
-        return null;
-      }
+    if (!resolvedDb) {
+      return null;
     }
 
-    return fallback();
+    const item = await getD1ContentBySlug<T>(resolvedDb, category, slug);
+
+    if (item) {
+      return item;
+    }
+
+    // 墓碑：D1 里有行但 deleted_at 非空 → 明确返回 null，不再兜底到本地
+    if (await hasD1ContentRow(resolvedDb, category, slug)) {
+      return null;
+    }
+
+    return null;
   };
 
   return useIsolateCache && resolvedDb

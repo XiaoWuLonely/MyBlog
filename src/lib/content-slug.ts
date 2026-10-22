@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import matter from "gray-matter";
-import { findStaticContentBySlug } from "./static-content.js";
 
 function safelyDecodeSlug(value: string) {
   try {
@@ -15,6 +14,8 @@ export function normalizeContentSlug(slug: string) {
   return safelyDecodeSlug(slug.trim());
 }
 
+// 仅被编辑器写本地链路使用（Commit 6 会一起删除）。
+// 查本地 mdx 文件 + 可选的 frontmatter 内 slug 匹配，找不到返回 null。
 export async function findContentFileBySlug(
   directory: string,
   slug: string,
@@ -57,5 +58,5 @@ export async function findContentFileBySlug(
     }
   }
 
-  return findStaticContentBySlug(directory, normalizedSlug);
+  return null;
 }

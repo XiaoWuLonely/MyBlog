@@ -51,7 +51,7 @@ export const getPostBySlug = cache(async (slug: string) => {
   });
 
   if (!item) {
-    throw new Error(`Post not found for slug: ${slug}`);
+    return null;
   }
   const normalizedSlug = normalizeContentSlug(slug);
 

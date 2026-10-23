@@ -1,211 +1,63 @@
-# MyBlog
+# WuLong 的博客
 
-A personal blog built with Next.js 16, Cloudflare D1 content storage, and Cloudflare Workers.
+你好，我是 **WuLong**，一名学生和开发者。这是我的个人博客的源代码仓库，也是一个长期维护的学习空间——用来沉淀学习笔记、前端实践、项目复盘和有价值的资源，让零散的知识和经验可以被持续整理和回看。
 
-**Live site:** [smartxb.syz](https://smartxb.syz)
+**线上地址：** [smartxb.xyz](https://smartxb.xyz)
 
-## Features
+## 关于我
 
-- Three content collections: archive posts, projects, and resources
-- Content stored in Cloudflare D1 as the single source of truth (no local MDX fallback)
-- Admin-gated editor for publishing and managing all content types
-- Visitor message board on the About page
-- Custom animated route transitions with Framer Motion
-- Light/dark theme with persistent toggle
-- URL-synced search and category filters on the archive page
-- Cloudflare D1 for content and visitor message persistence
-- ISR caching for public pages (KV incremental cache + D1 tag cache)
-- Bot/scanner request blocking at the proxy layer
+- 学生 / 开发者，base 在广东
+- 关注前端开发、页面交互和内容型网站的长期维护
+- 喜欢把学习笔记、项目实践和资源整理放进同一个清晰的工作流里
+- 希望这个博客既能记录技术成长，也能留下真实的思考和复盘
 
-## Pages
+**技能方向：** 学习记录 · 前端开发 · React / Next.js · 内容写作 · 项目实践
 
-| Route               | Description                                   |
-| ------------------- | --------------------------------------------- |
-| `/`                 | Home board                                    |
-| `/archive`          | Post archive with search and category filters |
-| `/posts/[slug]`     | Individual post                               |
-| `/projects`         | Project listing                               |
-| `/projects/[slug]`  | Project detail                                |
-| `/resources`        | Resource listing                              |
-| `/resources/[slug]` | Resource detail                               |
-| `/about`            | Profile page with message submission form     |
-| `/admin`            | Admin login                                   |
-| `/editor`           | Content editor (archive / project / resource) |
+**在哪里找到我：**
 
-## Stack
+- GitHub：[@LittlPenguin](https://github.com/LittlPenguin)
+- 掘金：[WuLong 的主页](https://juejin.cn/user/327030668540793)
+- 邮箱：[xiaowulonely23@gmail.com](mailto:xiaowulonely23@gmail.com)
 
-- **Framework:** Next.js 16.2.3 (App Router, React 19, React Compiler)
-- **Styling:** Tailwind CSS 4
-- **Animation:** Framer Motion
-- **Content:** Markdown/MDX bodies stored in Cloudflare D1, rendered with `next-mdx-remote`
-- **Deployment:** Cloudflare Workers via `@opennextjs/cloudflare`
-- **Database:** Cloudflare D1
+**时间线：**
 
-## Local Development
+| 年份 | 在做什么 |
+| ---- | -------- |
+| 2026 | 持续整理个人博客与学习内容，把文章、项目和资源放进统一的站点结构里 |
+| 2025 | 围绕 React、Next.js 和页面实现持续练习，把阶段性收获整理成可回看的内容 |
+| 2024 | 开始记录学习过程，把技术笔记、资源链接和项目想法逐步沉淀下来 |
 
-Requires Windows with Node.js and npm installed.
+## 博客内容
 
-```powershell
-# Install dependencies
-npm install
+站点内容分三类，全部可以在 [smartxb.xyz](https://smartxb.xyz) 上浏览：
 
-# Create environment file
-Copy-Item .env.example .env
-```
+### 📝 归档文章
 
-Set the required variables in `.env`:
+学习笔记、前端实践和日常思考。目前还在起步期，内容会持续增加。
 
-```env
-ADMIN_ACCESS_CODE=<your access code>
-ADMIN_SESSION_SECRET=<a long random string>
-```
+### 🗂 资源收藏
 
-For the full local runtime, including editor publishing and visitor messages, use the Cloudflare preview command. The D1 binding in `wrangler.jsonc` is intentionally configured with `"remote": true`, so local preview writes to the real remote Cloudflare D1 database.
+自己用过、觉得值得推荐的工具和资源，最近收录的有：
 
-```powershell
-npm run cf:preview
-```
+- **[Browser Use](https://smartxb.xyz/resources/browser-use)** — 让 AI Agent 用自然语言操作浏览器，告别选择器维护
+- **[MarkItDown](https://smartxb.xyz/resources/markitdown)** — 微软出品的轻量工具，把 PDF、Word、图片等统一转成 Markdown
+- **[Cockpit Tools](https://smartxb.xyz/resources/cockpit-tools)** — 通用 AI IDE 账号管理工具，支持 12 个平台的多账号切换
+- **[Clash Rules](https://smartxb.xyz/resources/clash-rules)** — 面向 Clash Premium 内核的分流规则集
+- **[CC Switch](https://smartxb.xyz/resources/cc-switch)** — 一个桌面应用统一管理多个 AI CLI 的供应商配置、MCP 和 Skills
+- **[Codex++](https://smartxb.xyz/resources/codex-plus-plus)** / **[Codex Provider Sync](https://smartxb.xyz/resources/codex-provider-sync)** — Codex 生态的两个增强小工具
 
-Use the plain Next.js dev server only for quick UI work that does not require Cloudflare bindings:
+### 🛠 项目
 
-```powershell
-npm run dev
-```
+历史项目都放在 GitHub（[@LittlPenguin](https://github.com/LittlPenguin)）上，正在逐步整理搬迁到本站，持续更新中。
 
-Open the URL printed by the command you run.
+## 本站是如何构建的
 
-### Local runtime capabilities
+- **框架：** Next.js 16（App Router、React 19、React Compiler）
+- **样式与动效：** Tailwind CSS 4 · Framer Motion
+- **内容：** Markdown/MDX 正文存储在 Cloudflare D1，通过 `next-mdx-remote` 渲染，由后台编辑器直接发布
+- **部署：** Cloudflare Workers（`@opennextjs/cloudflare`），KV + D1 做 ISR 缓存与标签失效，Durable Object 队列负责后台重校验
+- **其他：** 亮色/暗色主题、归档页搜索与分类过滤、About 页访客留言板
 
-| Runtime              | Public page reads (D1)                 | Editor / API route writes (D1)                                        | Use for                   |
-| -------------------- | -------------------------------------- | --------------------------------------------------------------------- | ------------------------- |
-| `npm run dev`        | Yes                                    | Not validated                                                         | UI work, route debugging  |
-| `npm run build`      | Yes (prerender passes)                 | —                                                                     | build validation          |
-| `npm start`          | Yes                                    | No — route handlers resolve no D1 binding and return 503              | page-rendering checks only |
-| `npm run cf:preview` | Yes                                    | Yes                                                                   | full local runtime        |
+---
 
-`npm start` is not a valid way to test publishing: the Node.js preview runtime does not resolve the Cloudflare bindings for route handlers, so `/editor/api/posts` answers 503. Validate publishing and visitor messages through `npm run cf:preview` (or `npx wrangler dev`), where the Worker runtime provides the bindings.
-
-## Commands
-
-```powershell
-npm run dev          # Next.js dev server; public pages read the remote D1 binding
-npm test             # Run tests (Node test runner)
-npm run typecheck    # TypeScript check (run sequentially, not in parallel)
-npm run build        # Production build
-npm run lint         # ESLint
-npm run cf:build     # Cloudflare build
-npm run cf:preview   # Cloudflare local preview using the remote D1 binding
-npm run cf:deploy    # Cloudflare build + deploy
-```
-
-Run a single test:
-
-```powershell
-node --experimental-specifier-resolution=node --test --experimental-strip-types src/lib/content.test.mjs
-```
-
-## Cloudflare Workers Deployment
-
-The site deploys to Cloudflare Workers. Public content is read from the `content_items` table in the configured Cloudflare D1 database at request time — there is no bundled filesystem or static-registry fallback. Pages that only read content (`/projects`, `/about`) call `connection()` so they render per request instead of being prerendered as empty lists at build time, while the data itself stays cached by `use cache`. The editor publishes content directly to the same D1 database.
-
-### Setup
-
-```powershell
-# Create D1 database
-npx wrangler d1 create myblog
-
-# Apply schema
-npx wrangler d1 execute myblog --remote --file migrations/0001_d1_r2_content.sql
-
-# Import content into D1
-# Optional: scripts/export-content-for-d1.mjs is a one-off migration helper that reads
-# src/content/{posts,projects,resources}. Those directories are empty in the current
-# repository, so the script only emits its header. Restore historical .mdx files there
-# first if you need to seed a fresh database.
-node scripts/export-content-for-d1.mjs | Out-File -FilePath .\d1-content-import.sql -Encoding utf8
-npx wrangler d1 execute myblog --remote --file .\d1-content-import.sql
-```
-
-If an existing remote D1 database already has `content_items` but is missing the visitor message table, apply the incremental message migration:
-
-```powershell
-npx wrangler d1 execute myblog --remote --file migrations/0002_messages.sql
-```
-
-### ISR cache setup
-
-Public pages are cached with Next.js ISR through the OpenNext Cloudflare adapter: rendered pages go to a KV namespace (`NEXT_INC_CACHE_KV`), and cache-tag invalidation records go to a `revalidations` table in the same D1 database (`NEXT_TAG_CACHE_D1`). Both bindings live in `wrangler.jsonc`.
-
-```powershell
-# Create the KV namespace, then copy the printed id into wrangler.jsonc
-npx wrangler kv namespace create NEXT_INC_CACHE_KV
-
-# Apply the tag-cache migration
-npx wrangler d1 execute myblog --remote --file migrations/0003_next_tag_cache.sql
-```
-
-Editor publish/update/delete operations call `revalidateTag("content:<category>", "max")`, so cached public pages refresh within seconds of a content change. Do not use the `{ expire: 0 }` revalidation profile — the D1 tag cache does not honor it.
-
-### ISR revalidation queue
-
-Pages carry `stale-while-revalidate`, so once a cached page passes its `cacheLife.revalidate` window the adapter has to re-render it in the background. That background job goes through OpenNext's queue (`open-next.config.ts` → `queue: doQueue`), which needs two bindings in `wrangler.jsonc`:
-
-- `durable_objects` binding `NEXT_CACHE_DO_QUEUE` → class `DOQueueHandler`, declared in `migrations` as `new_sqlite_classes` (the handler uses `ctx.storage.sql`).
-- `services` binding `WORKER_SELF_REFERENCE` pointing at this Worker's own name; the queue re-renders pages by sending a signed `HEAD` request back to the Worker.
-
-Leaving `queue` at the default (`dummy`) makes every stale-page hit log `Failed to revalidate stale page <path>` and the page never refreshes until a tag revalidation happens.
-
-The Durable Object binding brings a pending migration (`v1`). Workers Builds runs **two different commands**: the **Deploy command** (`npx wrangler deploy`, production branch only) and the **Preview command** (`npx wrangler versions upload` here, every non-production branch). Only `wrangler deploy` can apply Durable Object migrations, so a build on a feature/PR branch fails with:
-
-```
-This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`.
-Durable Object migrations must be applied with `wrangler deploy`.
-```
-
-This is expected on non-production branches, not a misconfiguration. Apply the migration once through the production branch build (merge the change) or by running `npx wrangler deploy` locally; after `v1` is applied, preview builds succeed again until a new migration tag is added. Verify with a dry run before deploying:
-
-```powershell
-npx wrangler deploy --dry-run --outdir .open-next/dryrun
-```
-
-The dry run must list `env.NEXT_CACHE_DO_QUEUE (DOQueueHandler) Durable Object` and `env.WORKER_SELF_REFERENCE (wulongblog) Worker`.
-
-Check the remote tables:
-
-```powershell
-npx wrangler d1 execute myblog --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
-```
-
-Configure Worker secrets:
-
-```powershell
-npx wrangler secret put ADMIN_ACCESS_CODE
-npx wrangler secret put ADMIN_SESSION_SECRET
-```
-
-Build and deploy:
-
-```powershell
-npm run cf:deploy
-```
-
-The `wrangler.jsonc` contains the D1 database binding (`MYBLOG_DB`). Replace the `database_id` if you recreate the database.
-
-### Notes
-
-- Production builds use Webpack (`--webpack`) because the OpenNext adapter does not reliably load Next 16 Turbopack server chunks in the Worker runtime.
-- Content has no local file fallback: when D1 has no row for a slug, the page answers 404 instead of reading a `.mdx` file. Deleted rows keep a tombstone in `deleted_at` so removed content cannot reappear.
-- `/posts/[slug]`, `/projects/[slug]`, and `/resources/[slug]` keep a placeholder entry in `generateStaticParams` because Cache Components rejects empty results at build time; the placeholder slug resolves to `notFound()` and real slugs render on demand.
-- New file uploads (covers, attachments) are rejected on Cloudflare; publish text-only content for now.
-- Visitor messages are stored in the remote D1 database. If message submission fails with `no such table: messages`, run `migrations/0002_messages.sql` against the remote database.
-- Known bot/scanner paths (WordPress probes, `.env`, `.git`, etc.) are answered with a fast 404 in `src/proxy.ts` before they reach the Worker router, keeping them from consuming CPU time.
-
-## Environment Variables
-
-| Variable               | Required | Description                                       |
-| ---------------------- | -------- | ------------------------------------------------- |
-| `ADMIN_ACCESS_CODE`    | Yes      | Admin login code                                  |
-| `ADMIN_SESSION_SECRET` | Yes      | Session signing secret                            |
-| `MYBLOG_DB`            | CF only  | D1 database binding (set in `wrangler.jsonc`)     |
-| `NEXT_TAG_CACHE_D1`    | CF only  | D1 binding for ISR tag cache (same database)      |
-| `NEXT_INC_CACHE_KV`    | CF only  | KV namespace binding for ISR incremental cache    |
+*Built as a personal space for learning, building, and writing.*
